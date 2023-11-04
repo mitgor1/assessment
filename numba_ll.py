@@ -27,6 +27,9 @@ import time
 import datetime
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib as mpl
+from ipywidgets import interact, IntSlider, FloatSlider, Dropdown
+from numba import jit, prange, cuda
 
 
 #=======================================================================
