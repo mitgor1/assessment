@@ -1,3 +1,7 @@
+# cython: language_level=3
+# cython: boundscheck=False
+# cython: wraparound=False
+
 """
 Basic Python Lebwohl-Lasher code.  Based on the paper 
 P.A. Lebwohl and G. Lasher, Phys. Rev. A, 6, 426-429 (1972).
@@ -28,6 +32,13 @@ import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+import cython
+cimport numpy as np
+cimport numpy as cnp
+cimport openmp
+from libc.math cimport exp
+from libc.math cimport sin, cos, exp
+from cython.parallel import prange
 
 #=======================================================================
 def initdat(nmax):
