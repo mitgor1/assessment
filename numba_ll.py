@@ -29,7 +29,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from ipywidgets import interact, IntSlider, FloatSlider, Dropdown
-from numba import jit, prange, cuda
+from numba import jit, prange, cuda, njit
 
 
 #=======================================================================
@@ -173,22 +173,22 @@ def one_energy(arr, ix, iy, nmax):
 """
 
 #=======================================================================
+@njit(parallel=True, fastmath=True)
+def all_energy(arr, nmax):
+    enall = 0.0
+    for i in prange(nmax):
+        for j in range(nmax):
+            enall += one_energy(arr, i, j, nmax)
+    return enall
+
+"""
 def all_energy(arr,nmax):
-    """
-    Arguments:
-	  arr (float(nmax,nmax)) = array that contains lattice data;
-      nmax (int) = side length of square lattice.
-    Description:
-      Function to compute the energy of the entire lattice. Output
-      is in reduced units (U/epsilon).
-	Returns:
-	  enall (float) = reduced energy of lattice.
-    """
     enall = 0.0
     for i in range(nmax):
         for j in range(nmax):
             enall += one_energy(arr,i,j,nmax)
     return enall
+"""    
 #=======================================================================
 def get_order(arr,nmax):
     """
