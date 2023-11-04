@@ -131,21 +131,9 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
         print("   {:05d}    {:6.4f} {:12.4f}  {:6.4f} ".format(i,ratio[i],energy[i],order[i]),file=FileOut)
     FileOut.close()
 #=======================================================================
+
+@jit(nopython=True)
 def one_energy(arr,ix,iy,nmax):
-    """
-    Arguments:
-	  arr (float(nmax,nmax)) = array that contains lattice data;
-	  ix (int) = x lattice coordinate of cell;
-	  iy (int) = y lattice coordinate of cell;
-      nmax (int) = side length of square lattice.
-    Description:
-      Function that computes the energy of a single cell of the
-      lattice taking into account periodic boundaries.  Working with
-      reduced energy (U/epsilon), equivalent to setting epsilon=1 in
-      equation (1) in the project notes.
-	Returns:
-	  en (float) = reduced energy of cell.
-    """
     en = 0.0
     ixp = (ix+1)%nmax # These are the coordinates
     ixm = (ix-1)%nmax # of the neighbours
@@ -164,6 +152,26 @@ def one_energy(arr,ix,iy,nmax):
     ang = arr[ix,iy]-arr[ix,iym]
     en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
     return en
+
+"""
+@jit(nopython=True)
+def one_energy(arr, ix, iy, nmax):
+    en = 0.0
+    constant = 0.5 * (1.0 - 3.0)
+    
+    ixp = (ix + 1) % nmax
+    ixm = (ix - 1) % nmax
+    iyp = (iy + 1) % nmax
+    iym = (iy - 1) % nmax
+
+    #attempted to optimise the performance of the energy calculation 
+    #by taking the constant and repetitions out
+    for dx, dy in [(ixp, iy), (ixm, iy), (ix, iyp), (ix, iym)]:
+        ang = arr[ix, iy] - arr[dx, dy]
+        en += constant * np.cos(ang) ** 2
+    return en
+"""
+
 #=======================================================================
 def all_energy(arr,nmax):
     """
