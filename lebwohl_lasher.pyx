@@ -55,7 +55,7 @@ def initdat(int nmax):
     return np.asarray(arr)
 
 #=======================================================================
-def plotdat(arr,pflag,nmax):
+def plotdat(cnp.ndarray arr, int pflag, int nmax):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -76,11 +76,15 @@ def plotdat(arr,pflag,nmax):
     """
     if pflag==0:
         return
-    u = np.cos(arr)
-    v = np.sin(arr)
-    x = np.arange(nmax)
-    y = np.arange(nmax)
-    cols = np.zeros((nmax,nmax))
+
+    cdef:
+        int i, j
+        cnp.ndarray u = np.cos(arr)
+        cnp.ndarray v = np.sin(arr)
+        cnp.ndarray x = np.arange(nmax)
+        cnp.ndarray y = np.arange(nmax)
+        cnp.ndarray cols = np.zeros((nmax, nmax))
+
     if pflag==1: # colour the arrows according to energy
         mpl.rc('image', cmap='rainbow')
         for i in range(nmax):
@@ -101,6 +105,7 @@ def plotdat(arr,pflag,nmax):
     q = ax.quiver(x, y, u, v, cols,norm=norm, **quiveropts)
     ax.set_aspect('equal')
     plt.show()
+
 #=======================================================================
 def savedat(cnp.ndarray arr, int nsteps, double Ts, double runtime, cnp,ndarray ratio,cnp.ndarray energy,cnp.ndarray order,int nmax):          
     """
