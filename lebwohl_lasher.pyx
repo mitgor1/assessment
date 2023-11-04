@@ -197,7 +197,7 @@ def all_energy(double[:, :] arr, int nmax, int thread_count):
         int ixm, ixp, iym, iyp
         
 
-    for i in prange(nmax, nogil=True, num_thread_count=thread_count):
+    for i in prange(nmax, nogil=True, num_threads=thread_count):
         for j in range(nmax):
             ixp = (i+1)%nmax 
             ixm = (i-1)%nmax 
