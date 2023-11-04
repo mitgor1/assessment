@@ -102,7 +102,7 @@ def plotdat(arr,pflag,nmax):
     ax.set_aspect('equal')
     plt.show()
 #=======================================================================
-def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
+def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):     
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -122,23 +122,24 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
     """
     # Create filename based on current date and time.
     current_datetime = datetime.datetime.now().strftime("%a-%d-%b-%Y-at-%I-%M-%S%p")
-    filename = "LL-Output-{:s}.txt".format(current_datetime)
+    filename = "LL-Output-{:s}-{}-{}.txt".format(current_datetime,nmax,Ts)
     FileOut = open(filename,"w")
     # Write a header with run parameters
-    print("#=====================================================",file=FileOut)
-    print("# File created:        {:s}".format(current_datetime),file=FileOut)
-    print("# Size of lattice:     {:d}x{:d}".format(nmax,nmax),file=FileOut)
-    print("# Number of MC steps:  {:d}".format(nsteps),file=FileOut)
-    print("# Reduced temperature: {:5.3f}".format(Ts),file=FileOut)
-    print("# Run time (s):        {:8.6f}".format(runtime),file=FileOut)
-    print("#=====================================================",file=FileOut)
-    print("# MC step:  Ratio:     Energy:   Order:",file=FileOut)
-    print("#=====================================================",file=FileOut)
+    FileOut.write("#=====================================================\n")
+    FileOut.write("# File created:        {:s}\n".format(current_datetime))
+    FileOut.write("# Size of lattice:     {:d}x{:d}\n".format(nmax,nmax))
+    FileOut.write("# Number of MC steps:  {:d}\n".format(nsteps))
+    FileOut.write("# Reduced temperature: {:5.3f}\n".format(Ts))
+    FileOut.write("# Run time (s):        {:8.6f}\n".format(runtime))
+    FileOut.write("#=====================================================\n")
+    FileOut.write("# MC step:  Ratio:     Energy:   Order:\n")
+    FileOut.write("#=====================================================\n")
     # Write the columns of data
     for i in range(nsteps+1):
-        print("   {:05d}    {:6.4f} {:12.4f}  {:6.4f} ".format(i,ratio[i],energy[i],order[i]),file=FileOut)
+        FileOut.write("   {:05d}    {:6.4f} {:12.4f}  {:6.4f} \n".format(i,ratio[i],energy[i],order[i]))
     FileOut.close()
 #=======================================================================
+
 def one_energy(arr,ix,iy,nmax):
     """
     Arguments:
