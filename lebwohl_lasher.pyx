@@ -102,7 +102,7 @@ def plotdat(arr,pflag,nmax):
     ax.set_aspect('equal')
     plt.show()
 #=======================================================================
-def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):     
+def savedat(cnp.ndarray arr, int nsteps, double Ts, double runtime, cnp,ndarray ratio,cnp.ndarray energy,cnp.ndarray order,int nmax):          
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -174,7 +174,7 @@ def one_energy(arr,ix,iy,nmax):
     en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
     return en
 #=======================================================================
-def all_energy(arr,nmax):
+def all_energy(double[:, :] arr, int nmax, int thread_count):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -265,8 +265,8 @@ def MC_step(arr,Ts,nmax):
                 else:
                     arr[ix,iy] -= ang
     return accept/(nmax*nmax)
-#=======================================================================
-def main(program, nsteps, nmax, temp, pflag):
+    
+def main(program,int nsteps,int nmax,double temp,int pflag, int thread_count):
     """
     Arguments:
 	  program (string) = the name of the program;
@@ -280,15 +280,15 @@ def main(program, nsteps, nmax, temp, pflag):
       NULL
     """
     # Create and initialise lattice
-    lattice = initdat(nmax)
+    cdef cnp.ndarray lattice = initdat(nmax)
     # Plot initial frame of lattice
     plotdat(lattice,pflag,nmax)
     # Create arrays to store energy, acceptance ratio and order parameter
-    energy = np.zeros(nsteps+1,dtype=np.dtype)
-    ratio = np.zeros(nsteps+1,dtype=np.dtype)
-    order = np.zeros(nsteps+1,dtype=np.dtype)
+    cdef cnp.ndarray energy = np.zeros(nsteps+1)
+    cdef cnp.ndarray ratio = np.zeros(nsteps+1)
+    cdef cnp.ndarray order = np.zeros(nsteps+1,)
     # Set initial values in arrays
-    energy[0] = all_energy(lattice,nmax)
+    energy[0] = all_energy(lattice,nmax,thread_count)
     ratio[0] = 0.5 # ideal value
     order[0] = get_order(lattice,nmax)
 
@@ -296,7 +296,7 @@ def main(program, nsteps, nmax, temp, pflag):
     initial = time.time()
     for it in range(1,nsteps+1):
         ratio[it] = MC_step(lattice,temp,nmax)
-        energy[it] = all_energy(lattice,nmax)
+        energy[it] = all_energy(lattice,nmax,thread_count)
         order[it] = get_order(lattice,nmax)
     final = time.time()
     runtime = final-initial
@@ -311,13 +311,14 @@ def main(program, nsteps, nmax, temp, pflag):
 # main simulation function.
 #
 if __name__ == '__main__':
-    if int(len(sys.argv)) == 5:
+    if int(len(sys.argv)) == 6:
         PROGNAME = sys.argv[0]
         ITERATIONS = int(sys.argv[1])
         SIZE = int(sys.argv[2])
         TEMPERATURE = float(sys.argv[3])
         PLOTFLAG = int(sys.argv[4])
-        main(PROGNAME, ITERATIONS, SIZE, TEMPERATURE, PLOTFLAG)
+        THREADS = int(sys.argv[5])
+        main(PROGNAME, ITERATIONS, SIZE, TEMPERATURE, PLOTFLAG, THREADS)
     else:
-        print("Usage: python {} <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG>".format(sys.argv[0]))
+        print("Usage: python {} <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG> <THREADS>".format(sys.argv[0]))
 #=======================================================================
