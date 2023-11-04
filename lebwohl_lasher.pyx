@@ -55,7 +55,7 @@ def initdat(int nmax):
     return np.asarray(arr)
 
 #=======================================================================
-def plotdat(cnp.ndarray arr, int pflag, int nmax):
+def plotdat(cnp.ndarray[cnp.float64_t, ndim=2] arr, int pflag, int nmax):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -79,11 +79,11 @@ def plotdat(cnp.ndarray arr, int pflag, int nmax):
 
     cdef:
         int i, j
-        cnp.ndarray u = np.cos(arr)
-        cnp.ndarray v = np.sin(arr)
-        cnp.ndarray x = np.arange(nmax)
-        cnp.ndarray y = np.arange(nmax)
-        cnp.ndarray cols = np.zeros((nmax, nmax))
+        cnp.ndarray[cnp.float64_t, ndim=2] u = np.cos(arr)
+        cnp.ndarray[cnp.float64_t, ndim=2] v = np.sin(arr)
+        cnp.ndarray[cnp.int_t, ndim=1] x = np.arange(nmax)
+        cnp.ndarray[cnp.int_t, ndim=1] y = np.arange(nmax)
+        cnp.ndarray[cnp.float64_t, ndim=2] cols = np.zeros((nmax, nmax))
 
     if pflag==1: # colour the arrows according to energy
         mpl.rc('image', cmap='rainbow')
@@ -107,7 +107,7 @@ def plotdat(cnp.ndarray arr, int pflag, int nmax):
     plt.show()
 
 #=======================================================================
-def savedat(cnp.ndarray arr, int nsteps, double Ts, double runtime, cnp,ndarray ratio,cnp.ndarray energy,cnp.ndarray order,int nmax):          
+def savedat(cnp.ndarray[cnp.float64_t, ndim=2] arr,int nsteps,double Ts,double runtime,cnp.ndarray[cnp.float64_t, ndim=1] ratio,cnp.ndarray[cnp.float64_t, ndim=1] energy,cnp.ndarray[cnp.float64_t, ndim=1] order,int nmax):          
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -310,13 +310,14 @@ def main(program,int nsteps,int nmax,double temp,int pflag, int thread_count):
       NULL
     """
     # Create and initialise lattice
-    cdef cnp.ndarray lattice = initdat(nmax)
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] lattice = initdat(nmax)
     # Plot initial frame of lattice
     plotdat(lattice,pflag,nmax)
     # Create arrays to store energy, acceptance ratio and order parameter
-    cdef cnp.ndarray energy = np.zeros(nsteps+1)
-    cdef cnp.ndarray ratio = np.zeros(nsteps+1)
-    cdef cnp.ndarray order = np.zeros(nsteps+1)
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] energy = np.zeros(nsteps+1)
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] ratio = np.zeros(nsteps+1)
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] order = np.zeros(nsteps+1)
+    
     # Set initial values in arrays
     energy[0] = all_energy(lattice,nmax,thread_count)
     ratio[0] = 0.5 # ideal value
