@@ -40,8 +40,7 @@ from libc.math cimport exp
 from libc.math cimport sin, cos, exp
 from cython.parallel import prange
 
-#=======================================================================
-def initdat(nmax):
+def initdat(int nmax):
     """
     Arguments:
       nmax (int) = size of lattice to create (nmax,nmax).
@@ -52,8 +51,10 @@ def initdat(nmax):
 	Returns:
 	  arr (float(nmax,nmax)) = array to hold lattice.
     """
-    arr = np.random.random_sample((nmax,nmax))*2.0*np.pi
-    return arr
+    cdef double[:, :] arr = np.random.random_sample((nmax, nmax)) * 2.0 * np.pi
+    return np.(arr)
+
+    
 #=======================================================================
 def plotdat(arr,pflag,nmax):
     """
