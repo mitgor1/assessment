@@ -296,4 +296,12 @@ def main(nsteps, nmax, temp, pflag):
     
     savedat(lattice, nsteps, temp, runtime, ratio, energy, order, nmax)
 
+    #interactive widgets making use of google scholar items
+    #can move the sliders to whichever parameters and code will save the data for that specific run whilst also outputting their plots
+interact(main, 
+         nsteps=IntSlider(min=1, max=10000, step=1, value=50, description='MC Steps'),
+         nmax=IntSlider(min=5, max=100, step=1, value=50, description='Lattice Size'),
+         temp=FloatSlider(min=0.0, max=2.0, step=0.01, value=0.5, description='Reduced Temperature'),
+         pflag=Dropdown(options=[('No Plot', 0), ('Plot Of Energy', 1), ('Plot of Angles', 2), ('Black Plot', 3)], value=2, description='Different Plots'))
+
 
