@@ -40,6 +40,8 @@ from libc.math cimport exp
 from libc.math cimport sin, cos, exp
 from cython.parallel import prange
 from cython cimport Py_ssize_t
+from libc.math cimport exp, cos
+from libc.stdlib cimport rand, RAND_MAX
 
 def initdat(int nmax):
     """
@@ -225,33 +227,31 @@ def all_energy(double[:, :] arr, int nmax, int thread_count):
             enall += en
     return enall  # Each interaction is counted twice
 #=======================================================================
-def get_order(arr,nmax):
-    """
-    Arguments:
-	  arr (float(nmax,nmax)) = array that contains lattice data;
-      nmax (int) = side length of square lattice.
-    Description:
-      Function to calculate the order parameter of a lattice
-      using the Q tensor approach, as in equation (3) of the
-      project notes.  Function returns S_lattice = max(eigenvalues(Q_ab)).
-	Returns:
-	  max(eigenvalues(Qab)) (float) = order parameter for lattice.
-    """
-    Qab = np.zeros((3,3))
-    delta = np.eye(3,3)
-    #
-    # Generate a 3D unit vector for each cell (i,j) and
-    # put it in a (3,i,j) array.
-    #
-    lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
+def get_order(double[:, :] arr, int nmax):
+  
+    #memory views for the matrices Qab and delta
+    cdef double[:, :] Qab = np.zeros((3, 3), dtype=np.float64)
+    cdef double[:, :] delta = np.eye(3)  
+    
+    #added cdef for the variables and arrays
+    cdef double[:, :, :] lab = np.vstack((np.cos(arr), np.sin(arr), np.zeros_like(arr))).reshape(3, nmax, nmax)
+    
+    cdef int a, b, i, j
+
     for a in range(3):
         for b in range(3):
             for i in range(nmax):
                 for j in range(nmax):
-                    Qab[a,b] += 3*lab[a,i,j]*lab[b,i,j] - delta[a,b]
-    Qab = Qab/(2*nmax*nmax)
-    eigenvalues,eigenvectors = np.linalg.eig(Qab)
+                    Qab[a, b] += 3 * lab[a, i, j] * lab[b, i, j] - delta[a, b]
+                    
+    
+    for a in range(3):
+        for b in range(3):
+            Qab[a, b] = Qab[a, b] / (2 * nmax * nmax)
+
+    eigenvalues, eigenvectors = np.linalg.eig(Qab)
     return eigenvalues.max()
+
 #=======================================================================
 def MC_step(arr,Ts,nmax):
     """
