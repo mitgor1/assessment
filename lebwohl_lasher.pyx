@@ -174,8 +174,11 @@ def one_energy(arr,ix,iy,nmax):
     en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
     return en
 #=======================================================================
+@cython.boundscheck(False)
+@cython.wraparound(False)
 def all_energy(double[:, :] arr, int nmax, int thread_count):
-    """
+
+"""
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
       nmax (int) = side length of square lattice.
@@ -185,11 +188,33 @@ def all_energy(double[:, :] arr, int nmax, int thread_count):
 	Returns:
 	  enall (float) = reduced energy of lattice.
     """
-    enall = 0.0
-    for i in range(nmax):
+
+    cdef:
+        double enall = 0.0
+        double en
+        double ang
+        int i, j
+        int ixm, ixp, iym, iyp
+        
+
+    for i in prange(nmax, nogil=True, num_thread_count=thread_count):
         for j in range(nmax):
-            enall += one_energy(arr,i,j,nmax)
-    return enall
+            ixp = (i+1)%nmax 
+            ixm = (i-1)%nmax 
+            iyp = (j+1)%nmax
+            iym = (j-1)%nmax
+
+            ang = arr[i,j]-arr[ixp,j]
+            en = 0.5*(1.0 - 3.0*cos(ang)*cos(ang))
+            ang = arr[i,j]-arr[ixm,j]
+            en += 0.5*(1.0 - 3.0*cos(ang)*cos(ang))
+            ang = arr[i,j]-arr[i,iyp]
+            en += 0.5*(1.0 - 3.0*cos(ang)*cos(ang))
+            ang = arr[i,j]-arr[i,iym]
+            en += 0.5*(1.0 - 3.0*cos(ang)*cos(ang))
+
+            enall += en
+    return enall  # Each interaction is counted twice
 #=======================================================================
 def get_order(arr,nmax):
     """
@@ -265,7 +290,7 @@ def MC_step(arr,Ts,nmax):
                 else:
                     arr[ix,iy] -= ang
     return accept/(nmax*nmax)
-    
+
 def main(program,int nsteps,int nmax,double temp,int pflag, int thread_count):
     """
     Arguments:
@@ -286,7 +311,7 @@ def main(program,int nsteps,int nmax,double temp,int pflag, int thread_count):
     # Create arrays to store energy, acceptance ratio and order parameter
     cdef cnp.ndarray energy = np.zeros(nsteps+1)
     cdef cnp.ndarray ratio = np.zeros(nsteps+1)
-    cdef cnp.ndarray order = np.zeros(nsteps+1,)
+    cdef cnp.ndarray order = np.zeros(nsteps+1)
     # Set initial values in arrays
     energy[0] = all_energy(lattice,nmax,thread_count)
     ratio[0] = 0.5 # ideal value
