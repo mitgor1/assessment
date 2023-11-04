@@ -25,7 +25,7 @@ domains alternate between old data and new data.
 
 SH 16-Oct-23
 """
-
+#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
 import sys
 import time
 import datetime
@@ -39,6 +39,7 @@ cimport openmp
 from libc.math cimport exp
 from libc.math cimport sin, cos, exp
 from cython.parallel import prange
+from cython cimport Py_ssize_t
 
 def initdat(int nmax):
     """
@@ -145,7 +146,8 @@ def savedat(cnp.ndarray[cnp.float64_t, ndim=2] arr,int nsteps,double Ts,double r
     FileOut.close()
 #=======================================================================
 
-def one_energy(arr,ix,iy,nmax):
+@cython.inline
+cdef double one_energy(double[:, :] arr, int ix, int iy, int nmax) nogil:
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -160,24 +162,26 @@ def one_energy(arr,ix,iy,nmax):
 	Returns:
 	  en (float) = reduced energy of cell.
     """
-    en = 0.0
-    ixp = (ix+1)%nmax # These are the coordinates
-    ixm = (ix-1)%nmax # of the neighbours
-    iyp = (iy+1)%nmax # with wraparound
-    iym = (iy-1)%nmax #
-#
-# Add together the 4 neighbour contributions
-# to the energy
-#
+    cdef:
+        double en = 0.0
+        double ang
+        int ixp = (ix+1)%nmax  # These are the coordinates
+        int ixm = (ix-1)%nmax  # of the neighbours
+        int iyp = (iy+1)%nmax  # with wraparound
+        int iym = (iy-1)%nmax
+        
+#Add together the 4 neighbour contributions to the energy
+
     ang = arr[ix,iy]-arr[ixp,iy]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    en += 0.5*(1.0 - 3.0*cos(ang)**2)
     ang = arr[ix,iy]-arr[ixm,iy]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    en += 0.5*(1.0 - 3.0*cos(ang)**2)
     ang = arr[ix,iy]-arr[ix,iyp]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    en += 0.5*(1.0 - 3.0*cos(ang)**2)
     ang = arr[ix,iy]-arr[ix,iym]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    en += 0.5*(1.0 - 3.0*cos(ang)**2)
     return en
+
 #=======================================================================
 @cython.boundscheck(False)
 @cython.wraparound(False)
