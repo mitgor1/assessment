@@ -253,7 +253,20 @@ def get_order(double[:, :] arr, int nmax):
     return eigenvalues.max()
 
 #=======================================================================
-def MC_step(arr,Ts,nmax):
+
+cdef inline double random_const():
+    return rand() / float(RAND_MAX)
+
+cdef inline double energy_diff_calc(double[:, :] arr, int ix, int iy, int nmax, double ang) nogil:
+    cdef:
+        double placement = arr[ix, iy]
+        double en_0 = one_energy(arr, ix, iy, nmax)
+    arr[ix, iy] += ang
+    cdef double en_1 = one_energy(arr, ix, iy, nmax)
+    arr[ix, iy] = placement
+    return en_1 - en_0
+
+def MC_step(cnp.ndarray[cnp.float64_t, ndim=2] arr, double Ts, int nmax):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -274,11 +287,16 @@ def MC_step(arr,Ts,nmax):
     # using lots of individual calls.  "scale" sets the width
     # of the distribution for the angle changes - increases
     # with temperature.
-    scale=0.1+Ts
-    accept = 0
-    xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
-    yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
-    aran = np.random.normal(scale=scale, size=(nmax,nmax))
+
+    cdef:
+        double scale = 0.1 + Ts
+        int accept = 0
+        int i, j, ix, iy
+        double ang, en_diff, boltz
+        cnp.ndarray[cnp.int_t, ndim=2] xran = np.random.randint(0, nmax, size=(nmax, nmax))
+        cnp.ndarray[cnp.int_t, ndim=2] yran = np.random.randint(0, nmax, size=(nmax, nmax))
+        cnp.ndarray[cnp.float64_t, ndim=2] aran = np.random.normal(scale=scale, size=(nmax, nmax))
+
     for i in range(nmax):
         for j in range(nmax):
             ix = xran[i,j]
