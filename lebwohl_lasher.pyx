@@ -299,24 +299,21 @@ def MC_step(cnp.ndarray[cnp.float64_t, ndim=2] arr, double Ts, int nmax):
 
     for i in range(nmax):
         for j in range(nmax):
-            ix = xran[i,j]
-            iy = yran[i,j]
-            ang = aran[i,j]
-            en0 = one_energy(arr,ix,iy,nmax)
-            arr[ix,iy] += ang
-            en1 = one_energy(arr,ix,iy,nmax)
-            if en1<=en0:
+            ix = xran[i, j]
+            iy = yran[i, j]
+            ang = aran[i, j]
+
+            en_diff = energy_diff_calc(arr, ix, iy, nmax, ang)
+            if en_diff <= 0:
+                arr[ix, iy] += ang
                 accept += 1
             else:
-            # Now apply the Monte Carlo test - compare
-            # exp( -(E_new - E_old) / T* ) >= rand(0,1)
-                boltz = np.exp( -(en1 - en0) / Ts )
-
-                if boltz >= np.random.uniform(0.0,1.0):
+                boltz = exp(-en_diff / Ts)
+                if boltz >= random_const():
+                    arr[ix, iy] += ang
                     accept += 1
-                else:
-                    arr[ix,iy] -= ang
-    return accept/(nmax*nmax)
+
+    return accept / (nmax * nmax)
 
 def main(program,int nsteps,int nmax,double temp,int pflag, int thread_count):
     """
@@ -346,7 +343,8 @@ def main(program,int nsteps,int nmax,double temp,int pflag, int thread_count):
     order[0] = get_order(lattice,nmax)
 
     # Begin doing and timing some MC steps.
-    initial = time.time()
+    initial = openmp.omp_get_wtime()
+    cdef int it
     for it in range(1,nsteps+1):
         ratio[it] = MC_step(lattice,temp,nmax)
         energy[it] = all_energy(lattice,nmax,thread_count)
