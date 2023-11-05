@@ -26,8 +26,13 @@ import sys
 import time
 import datetime
 import numpy as np
+import matplotlib
+matplotlib.use('Agg') 
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+from mpi4py import MPI
+
+
 
 #=======================================================================
 def initdat(nmax):
