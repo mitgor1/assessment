@@ -349,7 +349,7 @@ def main(program,int nsteps,int nmax,double temp,int pflag, int thread_count):
         ratio[it] = MC_step(lattice,temp,nmax)
         energy[it] = all_energy(lattice,nmax,thread_count)
         order[it] = get_order(lattice,nmax)
-    final = time.time()
+    final = openmp.omp_get_wtime()
     runtime = final-initial
     
     # Final outputs
