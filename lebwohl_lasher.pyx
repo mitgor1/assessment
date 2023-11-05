@@ -189,7 +189,7 @@ cdef double one_energy(double[:, :] arr, int ix, int iy, int nmax) nogil:
 @cython.wraparound(False)
 def all_energy(double[:, :] arr, int nmax, int thread_count):
 
-"""
+    """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
       nmax (int) = side length of square lattice.
