@@ -107,7 +107,7 @@ def plotdat(cnp.ndarray[cnp.float64_t, ndim=2] arr, int pflag, int nmax):
     fig, ax = plt.subplots()
     q = ax.quiver(x, y, u, v, cols,norm=norm, **quiveropts)
     ax.set_aspect('equal')
-    plt.show()
+    plt.savefig(f"plot_{nmax}.png")
 
 #=======================================================================
 def savedat(cnp.ndarray[cnp.float64_t, ndim=2] arr,int nsteps,double Ts,double runtime,cnp.ndarray[cnp.float64_t, ndim=1] ratio,cnp.ndarray[cnp.float64_t, ndim=1] energy,cnp.ndarray[cnp.float64_t, ndim=1] order,int nmax):          
