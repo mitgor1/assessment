@@ -229,27 +229,25 @@ def precompute_randoms(nmax, Ts):
     pre_rand = np.random.uniform(0.0, 1.0, size=(nmax, nmax))
     return xran, yran, aran, pre_rand
 
-@jit(parallel=True)
-def MC_step(arr, Ts, nmax):
-    scale = 0.1 + Ts
-    accept = 0
+@njit(parallel=True)
+def MC_step(arr, Ts, nmax, xran, yran, aran, pre_rand):
+    accept = np.zeros((nmax,), dtype=np.int32)
 
-    for i in range(nmax):
-        for j in range(nmax):
+    for i in prange(nmax):
+        for j in prange(nmax):
             ix, iy = xran[i, j], yran[i, j]
             ang = aran[i, j]
             en0 = one_energy(arr, ix, iy, nmax)
             arr[ix, iy] += ang
             en1 = one_energy(arr, ix, iy, nmax)
 
-            energy_diff = en1 - en0 #seperate energy diff section
-            #splitting up the calculations done and merging the if statements for optimisation and speed
+            energy_diff = en1 - en0
             if energy_diff <= 0 or np.exp(-energy_diff / Ts) >= pre_rand[i, j]:
-                accept += 1
+                accept[i] += 1
             else:
                 arr[ix, iy] -= ang
 
-    return accept / (nmax * nmax)
+    return accept.sum() / (nmax * nmax)
 
 #=======================================================================
 def main(nsteps, nmax, temp, pflag):
