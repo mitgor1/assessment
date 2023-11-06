@@ -30,6 +30,7 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 from ipywidgets import interact, IntSlider, FloatSlider, Dropdown
 from numba import jit, prange, cuda, njit
+import numba 
 
 
 #=======================================================================
@@ -229,10 +230,13 @@ def MC_step(arr, Ts, nmax):
     #pre-computing the random numbers so they're not made in the loops
     pre_rand = np.random.uniform(0.0, 1.0, size=(nmax, nmax))
 
-    for i in range(nmax):
-        for j in range(nmax):
-            ix, iy = xran[i, j], yran[i, j]
-            ang = aran[i, j]
+    for i in prange(nmax):  
+        for j in prange(nmax):
+            
+            ix = numba.np.random.randint(0, nmax)
+            iy = numba.np.random.randint(0, nmax)
+            ang = numba.np.random.normal(0, scale)
+
             en0 = one_energy(arr, ix, iy, nmax)
             arr[ix, iy] += ang
             en1 = one_energy(arr, ix, iy, nmax)
