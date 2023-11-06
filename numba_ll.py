@@ -220,6 +220,7 @@ def get_order(arr,nmax):
     eigenvalues,eigenvectors = np.linalg.eig(Qab)
     return eigenvalues.max()
 #=======================================================================
+@jit(nopython=True, parallel=True, fastmath=True, cache=True)
 def MC_step(arr, Ts, nmax):
     scale = 0.1 + Ts
     accept = 0
