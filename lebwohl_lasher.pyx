@@ -148,6 +148,71 @@ def savedat(cnp.ndarray[cnp.float64_t, ndim=2] arr,int nsteps,double Ts,double r
     FileOut.close()
 #=======================================================================
 
+def read_file(file_path):
+    with open(file_path, 'r') as file:
+        lines = file.readlines()
+    
+    data = []
+    for line in lines:
+        if line.strip() and line[0].isdigit():  
+            parts = line.split()
+            
+            step_data = {
+                'MC step': int(parts[0]),
+                'Ratio': float(parts[1]),
+                'Energy': float(parts[2]),
+                'Order': float(parts[3])
+            }
+            data.append(step_data)
+            
+    return data
+
+def compare_values(reference_data, comparison_data, tolerance=0.05):
+    match_counts = {'Energy': 0, 'Order': 0, 'Ratio': 0}
+    entry_counts = {'Energy': 0, 'Order': 0, 'Ratio': 0}
+
+    for ref_entry, comp_entry in zip(reference_data, comparison_data):
+        
+        if abs(ref_entry['Energy'] - comp_entry['Energy']) <= tolerance * abs(ref_entry['Energy']):
+            match_counts['Energy'] += 1
+        entry_counts['Energy'] += 1
+
+        
+        if abs(ref_entry['Order'] - comp_entry['Order']) <= tolerance * abs(ref_entry['Order']):
+            match_counts['Order'] += 1
+        entry_counts['Order'] += 1
+
+        
+        if abs(ref_entry['Ratio'] - comp_entry['Ratio']) <= tolerance * abs(ref_entry['Ratio']):
+            match_counts['Ratio'] += 1
+        entry_counts['Ratio'] += 1
+
+    
+    similarity_percentages = {
+        category: (match_counts[category] / entry_counts[category]) * 100
+        for category in match_counts
+    }
+
+    
+    total_match_count = sum(match_counts.values())
+    total_entry_count = sum(entry_counts.values())
+    overall_similarity_percentage = (total_match_count / total_entry_count) * 100
+
+    # Print the individual percentages and the overall percentage
+    print(f"Closeness percentage for each value is:")
+    for category, percent in similarity_percentages.items():
+        print(f"{category}: {percent:.2f}%")
+    print(f"Overall: {overall_similarity_percentage:.2f}%")
+    
+  
+file_1 = "LL-Output-{:s}-{}-{}.txt".format(current_datetime,nmax,Ts)
+file_2 = 'comparison.txt'
+
+data1 = read_file(file_1)
+data2 = read_file(file_2)
+
+comparison = compare_values(data1, data2)
+
 @cython.inline
 cdef double one_energy(double[:, :] arr, int ix, int iy, int nmax) nogil:
     """
