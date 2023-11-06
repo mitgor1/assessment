@@ -167,22 +167,39 @@ def one_energy(arr,ix,iy,nmax):
     en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
     return en
 #=======================================================================
+
+"""
 def all_energy(arr,nmax):
-    """
-    Arguments:
-	  arr (float(nmax,nmax)) = array that contains lattice data;
-      nmax (int) = side length of square lattice.
-    Description:
-      Function to compute the energy of the entire lattice. Output
-      is in reduced units (U/epsilon).
-	Returns:
-	  enall (float) = reduced energy of lattice.
-    """
+    
     enall = 0.0
     for i in range(nmax):
         for j in range(nmax):
             enall += one_energy(arr,i,j,nmax)
     return enall
+"""
+
+def all_energy(arr, nmax):
+    arr_ip = np.roll(arr, -1, axis=0)
+    arr_im = np.roll(arr, 1, axis=0)
+    arr_jp = np.roll(arr, -1, axis=1)
+    arr_jm = np.roll(arr, 1, axis=1)
+
+   
+    ang_xp = arr - arr_ip
+    ang_xm = arr - arr_im
+    ang_yp = arr - arr_jp
+    ang_ym = arr - arr_jm
+
+    
+    cos2_ang_xp = np.cos(ang_xp) ** 2
+    cos2_ang_xm = np.cos(ang_xm) ** 2
+    cos2_ang_yp = np.cos(ang_yp) ** 2
+    cos2_ang_ym = np.cos(ang_ym) ** 2
+
+    en = 0.5 * (1 - 3 * (cos2_ang_xp + cos2_ang_xm + cos2_ang_yp + cos2_ang_ym))
+    enall = np.sum(en)
+    return enall
+
 #=======================================================================
 def get_order(arr,nmax):
     """
