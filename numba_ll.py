@@ -220,24 +220,24 @@ def get_order(arr,nmax):
     eigenvalues,eigenvectors = np.linalg.eig(Qab)
     return eigenvalues.max()
 #=======================================================================
+
+def precompute_randoms(nmax, Ts):
+    scale = 0.1 + Ts
+    xran = np.random.randint(0, high=nmax, size=(nmax, nmax))
+    yran = np.random.randint(0, high=nmax, size=(nmax, nmax))
+    aran = np.random.normal(scale=scale, size=(nmax, nmax))
+    pre_rand = np.random.uniform(0.0, 1.0, size=(nmax, nmax))
+    return xran, yran, aran, pre_rand
+
 @jit(parallel=True)
 def MC_step(arr, Ts, nmax):
     scale = 0.1 + Ts
     accept = 0
 
-    xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
-    yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
-    aran = np.random.normal(scale=scale, size=(nmax,nmax))
-    #pre-computing the random numbers so they're not made in the loops
-    pre_rand = np.random.uniform(0.0, 1.0, size=(nmax, nmax))
-
-    for i in prange(nmax):  
-        for j in prange(nmax):
-            
-            ix = numba.np.random.randint(0, nmax)
-            iy = numba.np.random.randint(0, nmax)
-            ang = numba.np.random.normal(0, scale)
-
+    for i in range(nmax):
+        for j in range(nmax):
+            ix, iy = xran[i, j], yran[i, j]
+            ang = aran[i, j]
             en0 = one_energy(arr, ix, iy, nmax)
             arr[ix, iy] += ang
             en1 = one_energy(arr, ix, iy, nmax)
@@ -247,7 +247,7 @@ def MC_step(arr, Ts, nmax):
             if energy_diff <= 0 or np.exp(-energy_diff / Ts) >= pre_rand[i, j]:
                 accept += 1
             else:
-                arr[ix, iy] -= ang  
+                arr[ix, iy] -= ang
 
     return accept / (nmax * nmax)
 
