@@ -34,6 +34,7 @@ import numba
 
 
 #=======================================================================
+@njit
 def initdat(nmax):
     """
     Arguments:
@@ -133,6 +134,31 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
     FileOut.close()
 #=======================================================================
 
+@njit
+def line_energy(angles, current_energy, ix, nmax):
+    # Calculate index of previous and next rows accounting for periodic boundary conditions
+    ix_plus = (ix + 1) % nmax
+    ix_minus = (ix - 1) % nmax
+
+    # Calculate angle differences for the row
+    anglediff_next = angles[ix, :] - angles[ix_plus, :]
+    anglediff_prev = angles[ix, :] - angles[ix_minus, :]
+    anglediff_left = angles[ix, :] - np.roll(angles[ix, :], -1)
+    anglediff_right = angles[ix, :] - np.roll(angles[ix, :], 1)
+
+    # Now, take the cosine of the angle differences
+    cosdiff_next = np.cos(anglediff_next)
+    cosdiff_prev = np.cos(anglediff_prev)
+    cosdiff_left = np.cos(anglediff_left)
+    cosdiff_right = np.cos(anglediff_right)
+
+    # Compute the energy contributions using the cosine of angle differences
+    current_energy += 0.5 - 1.5 * cosdiff_next**2
+    current_energy += 0.5 - 1.5 * cosdiff_prev**2
+    current_energy += 0.5 - 1.5 * cosdiff_left**2
+    current_energy += 0.5 - 1.5 * cosdiff_right**2
+
+"""
 @jit(nopython=True)
 def one_energy(arr,ix,iy,nmax):
     en = 0.0
@@ -153,7 +179,7 @@ def one_energy(arr,ix,iy,nmax):
     ang = arr[ix,iy]-arr[ix,iym]
     en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
     return en
-
+"""
 """
 @jit(nopython=True)
 def one_energy(arr, ix, iy, nmax):
@@ -174,6 +200,7 @@ def one_energy(arr, ix, iy, nmax):
 """
 
 #=======================================================================
+"""
 @njit(parallel=True, fastmath=True)
 def all_energy(arr, nmax):
     enall = 0.0
@@ -181,7 +208,7 @@ def all_energy(arr, nmax):
         for j in range(nmax):
             enall += one_energy(arr, i, j, nmax)
     return enall
-
+"""
 """
 def all_energy(arr,nmax):
     enall = 0.0
@@ -191,19 +218,31 @@ def all_energy(arr,nmax):
     return enall
 """    
 #=======================================================================
+
+@jit(nopython=True)
+def get_Qab(angles,nmax):
+    Qab = np.zeros((2,2))
+    delta = np.eye(2,2)
+    lab = np.vstack((np.cos(angles),np.sin(angles))).reshape(2,nmax,nmax)
+    for a in range(2):
+        for b in range(2):
+            for i in range(nmax):
+                for j in range(nmax):
+                    Qab[a,b] += 3*lab[a,i,j]*lab[b,i,j] - delta[a,b]
+    Qab = Qab/(2*nmax*nmax)
+    return Qab
+
+@jit(nopython=True)
+def get_order(order_array,nsteps):
+    order = np.zeros(nsteps + 1)
+    for t in range(nsteps):
+        eigenvalues,eigenvectors = np.linalg.eig(order_array[t])
+        order[t] = eigenvalues.max()
+    return order
+
+"""
 @jit(nopython=True)
 def get_order(arr,nmax):
-    """
-    Arguments:
-	  arr (float(nmax,nmax)) = array that contains lattice data;
-      nmax (int) = side length of square lattice.
-    Description:
-      Function to calculate the order parameter of a lattice
-      using the Q tensor approach, as in equation (3) of the
-      project notes.  Function returns S_lattice = max(eigenvalues(Q_ab)).
-	Returns:
-	  max(eigenvalues(Qab)) (float) = order parameter for lattice.
-    """
     Qab = np.zeros((3,3))
     delta = np.eye(3,3)
     #
@@ -219,6 +258,7 @@ def get_order(arr,nmax):
     Qab = Qab/(2*nmax*nmax)
     eigenvalues,eigenvectors = np.linalg.eig(Qab)
     return eigenvalues.max()
+"""
 #=======================================================================
 
 def precompute_randoms(nmax, Ts):
