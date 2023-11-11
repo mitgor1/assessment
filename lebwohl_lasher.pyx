@@ -217,139 +217,43 @@ data2 = read_file(file_2)
 comparison = compare_values(data1, data2)
 """
 
-cdef void line_energy(cnp.ndarray[cnp.float64_t, ndim=2] angles, double[:, :, :] current_energy, int ix, int nmax, int old_new):
-    cdef int iy, ix_plus, ix_minus
-    cdef double anglediff_next, anglediff_prev, anglediff_left, anglediff_right
-    cdef double cosdiff_next, cosdiff_prev, cosdiff_left, cosdiff_right
-
-    #periodic boundary conditions like numba code, based on rows before and after 
-    ix_plus = (ix + 1) % nmax
-    ix_minus = (ix - 1) % nmax
-
-    for iy in range(nmax):
-        #angle difference calculation based off the rows
-        iy_plus = (iy + 1) % nmax
-        iy_minus = (iy - 1) % nmax
-
-        anglediff_next = angles[ix, iy] - angles[ix_plus, iy]
-        anglediff_prev = angles[ix, iy] - angles[ix_minus, iy]
-        anglediff_left = angles[ix, iy] - angles[ix, iy_minus]
-        anglediff_right = angles[ix, iy] - angles[ix, iy_plus]
-
-        #cosine performed, tried using non python commands for speedup in cython
-        cosdiff_next = cos(anglediff_next)
-        cosdiff_prev = cos(anglediff_prev)
-        cosdiff_left = cos(anglediff_left)
-        cosdiff_right = cos(anglediff_right)
-
-        # Perform operations directly on the memory view slice
-        current_energy[old_new, ix, iy] = (0.5 - 1.5 * pow(cosdiff_next, 2)
-                                           + 0.5 - 1.5 * pow(cosdiff_prev, 2)
-                                           + 0.5 - 1.5 * pow(cosdiff_left, 2)
-                                           + 0.5 - 1.5 * pow(cosdiff_right, 2))
-                                    
-cdef double one_energy(double[:, :] arr, int ix, int iy, int nmax):
-    """
-    Arguments:
-	  arr (float(nmax,nmax)) = array that contains lattice data;
-	  ix (int) = x lattice coordinate of cell;
-	  iy (int) = y lattice coordinate of cell;
-      nmax (int) = side length of square lattice.
-    Description:
-      Function that computes the energy of a single cell of the
-      lattice taking into account periodic boundaries.  Working with
-      reduced energy (U/epsilon), equivalent to setting epsilon=1 in
-      equation (1) in the project notes.
-	Returns:
-	  en (float) = reduced energy of cell.
-    """
-    cdef:
-        double en = 0.0
-        double ang
-        int ixp = (ix+1)%nmax  # These are the coordinates
-        int ixm = (ix-1)%nmax  # of the neighbours
-        int iyp = (iy+1)%nmax  # with wraparound
-        int iym = (iy-1)%nmax
-        
-#Add together the 4 neighbour contributions to the energy
-
-    ang = arr[ix,iy]-arr[ixp,iy]
-    en += 0.5*(1.0 - 3.0*cos(ang)**2)
-    ang = arr[ix,iy]-arr[ixm,iy]
-    en += 0.5*(1.0 - 3.0*cos(ang)**2)
-    ang = arr[ix,iy]-arr[ix,iyp]
-    en += 0.5*(1.0 - 3.0*cos(ang)**2)
-    ang = arr[ix,iy]-arr[ix,iym]
-    en += 0.5*(1.0 - 3.0*cos(ang)**2)
-    return en
-
-#=======================================================================
-@cython.boundscheck(False)
-@cython.wraparound(False)
-def all_energy(double[:, :] arr, int nmax, int thread_count):
-
-    """
-    Arguments:
-	  arr (float(nmax,nmax)) = array that contains lattice data;
-      nmax (int) = side length of square lattice.
-    Description:
-      Function to compute the energy of the entire lattice. Output
-      is in reduced units (U/epsilon).
-	Returns:
-	  enall (float) = reduced energy of lattice.
-    """
-
-    cdef:
-        double enall = 0.0
-        double en
-        double ang
-        int i, j
-        int ixm, ixp, iym, iyp
-        
-
-    for i in prange(nmax, nogil=True, num_threads=thread_count):
-        for j in range(nmax):
-            ixp = (i+1)%nmax 
-            ixm = (i-1)%nmax 
-            iyp = (j+1)%nmax
-            iym = (j-1)%nmax
-
-            ang = arr[i,j]-arr[ixp,j]
-            en = 0.5*(1.0 - 3.0*cos(ang)*cos(ang))
-            ang = arr[i,j]-arr[ixm,j]
-            en += 0.5*(1.0 - 3.0*cos(ang)*cos(ang))
-            ang = arr[i,j]-arr[i,iyp]
-            en += 0.5*(1.0 - 3.0*cos(ang)*cos(ang))
-            ang = arr[i,j]-arr[i,iym]
-            en += 0.5*(1.0 - 3.0*cos(ang)*cos(ang))
-
-            enall += en
-    return enall  # Each interaction is counted twice
-#=======================================================================
-def get_order(double[:, :] arr, int nmax):
-  
-    #memory views for the matrices Qab and delta
-    cdef double[:, :] Qab = np.zeros((3, 3), dtype=np.float64)
-    cdef double[:, :] delta = np.eye(3)  
-    
-    #added cdef for the variables and arrays
-    cdef double[:, :, :] lab = np.vstack((np.cos(arr), np.sin(arr), np.zeros_like(arr))).reshape(3, nmax, nmax)
-    
+def get_Qab(cnp.ndarray[cnp.float64_t, ndim=2] angles, int nmax):
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] Qab = np.zeros((2, 2), dtype=np.float64)
+    cdef double[:, :] delta = np.eye(2, dtype=np.float64)
+    cdef double[:, :, :] lab = np.vstack((np.cos(angles), np.sin(angles))).reshape(2, nmax, nmax)
     cdef int a, b, i, j
 
-    for a in range(3):
-        for b in range(3):
+    for a in range(2):
+        for b in range(2):
             for i in range(nmax):
                 for j in range(nmax):
                     Qab[a, b] += 3 * lab[a, i, j] * lab[b, i, j] - delta[a, b]
-                    
-    
-    for a in range(3):
-        for b in range(3):
-            Qab[a, b] = Qab[a, b] / (2 * nmax * nmax)
+    Qab = Qab / (2 * nmax * nmax)
+    return np.asarray(Qab)
 
-    eigenvalues, eigenvectors = np.linalg.eig(Qab)
-    return eigenvalues.max()
+#using a cdef function instead of direct manipulation for faster processing:
+cdef cnp.ndarray[cnp.float64_t, ndim=2] gen_noise_matrixO(int nmax, double scale):
+    # Declare variables with static types
+    cdef int index
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] noise_values = np.empty(nmax**2, dtype=np.float64)
+
+    # Loop for generating noise values
+    for index in range(nmax**2):
+        noise_values[index] = np.random.normal(scale=scale)
+
+    # Reshape the noise array to a 2D matrix
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] noise_matrix = noise_values.reshape((nmax, nmax))
+
+    return noise_matrix
+
+#same calculations as the numba version and original
+def get_order(cnp.ndarray[cnp.float64_t, ndim=3] order_array, int nsteps):
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] order = np.zeros(nsteps + 1, dtype=np.float64)
+    cdef int t
+    for t in range(nsteps):
+        eigenvalues,eigenvectors = np.linalg.eig(order_array[t])
+        order[t] = eigenvalues.max()
+    return np.asarray(order)
 
 #=======================================================================
 
