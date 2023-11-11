@@ -204,7 +204,7 @@ def compare_values(reference_data, comparison_data, tolerance=0.05):
         print(f"{category}: {percent:.2f}%")
     print(f"Overall: {overall_similarity_percentage:.2f}%")
     
-  
+"""
 file_1 = "LL-Output-{:s}-{}-{}.txt".format(current_datetime,nmax,Ts)
 file_2 = 'comparison.txt'
 
@@ -212,9 +212,10 @@ data1 = read_file(file_1)
 data2 = read_file(file_2)
 
 comparison = compare_values(data1, data2)
+"""
 
-@cython.inline
-cdef double one_energy(double[:, :] arr, int ix, int iy, int nmax) nogil:
+
+cdef double one_energy(double[:, :] arr, int ix, int iy, int nmax):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -319,10 +320,43 @@ def get_order(double[:, :] arr, int nmax):
 
 #=======================================================================
 
+cdef void line_energy(cnp.ndarray[cnp.float64_t, ndim=2] angles, double[:, :, :] current_energy, int ix, int nmax, int old_new):
+    # Assume angles is a 2D array of shape (nmax, nmax)
+    cdef int iy, ix_plus, ix_minus
+    cdef double anglediff_next, anglediff_prev, anglediff_left, anglediff_right
+    cdef double cosdiff_next, cosdiff_prev, cosdiff_left, cosdiff_right
+
+    # Calculate index of previous and next rows accounting for periodic boundary conditions
+    ix_plus = (ix + 1) % nmax
+    ix_minus = (ix - 1) % nmax
+
+    for iy in range(nmax):
+        # Calculate angle differences for the row using periodic boundary conditions for columns
+        iy_plus = (iy + 1) % nmax
+        iy_minus = (iy - 1) % nmax
+
+        anglediff_next = angles[ix, iy] - angles[ix_plus, iy]
+        anglediff_prev = angles[ix, iy] - angles[ix_minus, iy]
+        anglediff_left = angles[ix, iy] - angles[ix, iy_minus]
+        anglediff_right = angles[ix, iy] - angles[ix, iy_plus]
+
+        # Take the cosine of the angle differences
+        cosdiff_next = cos(anglediff_next)
+        cosdiff_prev = cos(anglediff_prev)
+        cosdiff_left = cos(anglediff_left)
+        cosdiff_right = cos(anglediff_right)
+
+        # Perform operations directly on the memory view slice
+        current_energy[old_new, ix, iy] = (0.5 - 1.5 * pow(cosdiff_next, 2)
+                                           + 0.5 - 1.5 * pow(cosdiff_prev, 2)
+                                           + 0.5 - 1.5 * pow(cosdiff_left, 2)
+                                           + 0.5 - 1.5 * pow(cosdiff_right, 2))
+
+
 cdef inline double random_const():
     return rand() / float(RAND_MAX)
 
-cdef inline double energy_diff_calc(double[:, :] arr, int ix, int iy, int nmax, double ang) nogil:
+cdef inline double energy_diff_calc(double[:, :] arr, int ix, int iy, int nmax, double ang):
     cdef:
         double placement = arr[ix, iy]
         double en_0 = one_energy(arr, ix, iy, nmax)
@@ -380,7 +414,7 @@ def MC_step(cnp.ndarray[cnp.float64_t, ndim=2] arr, double Ts, int nmax):
 
     return accept / (nmax * nmax)
 
-def main(program,int nsteps,int nmax,double temp,int pflag, int thread_count):
+def main(int nsteps,int nmax,double temp,int pflag, int thread_count):
     """
     Arguments:
 	  program (string) = the name of the program;
@@ -418,7 +452,7 @@ def main(program,int nsteps,int nmax,double temp,int pflag, int thread_count):
     runtime = final-initial
     
     # Final outputs
-    print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
+    print("Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(nmax,nsteps,temp,order[nsteps-1],runtime))
     # Plot final frame of lattice and generate output file
     savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
     plotdat(lattice,pflag,nmax)
@@ -428,13 +462,12 @@ def main(program,int nsteps,int nmax,double temp,int pflag, int thread_count):
 #
 if __name__ == '__main__':
     if int(len(sys.argv)) == 6:
-        PROGNAME = sys.argv[0]
         ITERATIONS = int(sys.argv[1])
         SIZE = int(sys.argv[2])
         TEMPERATURE = float(sys.argv[3])
         PLOTFLAG = int(sys.argv[4])
         THREADS = int(sys.argv[5])
-        main(PROGNAME, ITERATIONS, SIZE, TEMPERATURE, PLOTFLAG, THREADS)
+        main(ITERATIONS, SIZE, TEMPERATURE, PLOTFLAG, THREADS)
     else:
         print("Usage: python {} <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG> <THREADS>".format(sys.argv[0]))
 #=======================================================================
