@@ -42,6 +42,9 @@ from cython.parallel import prange
 from cython cimport Py_ssize_t
 from libc.math cimport exp, cos
 from libc.stdlib cimport rand, RAND_MAX
+from libc.math cimport sqrt, log, M_PI
+from libc.math cimport cos, pow
+from libc.time cimport time
 
 def initdat(int nmax):
     """
@@ -214,7 +217,37 @@ data2 = read_file(file_2)
 comparison = compare_values(data1, data2)
 """
 
+cdef void line_energy(cnp.ndarray[cnp.float64_t, ndim=2] angles, double[:, :, :] current_energy, int ix, int nmax, int old_new):
+    cdef int iy, ix_plus, ix_minus
+    cdef double anglediff_next, anglediff_prev, anglediff_left, anglediff_right
+    cdef double cosdiff_next, cosdiff_prev, cosdiff_left, cosdiff_right
 
+    #periodic boundary conditions like numba code, based on rows before and after 
+    ix_plus = (ix + 1) % nmax
+    ix_minus = (ix - 1) % nmax
+
+    for iy in range(nmax):
+        #angle difference calculation based off the rows
+        iy_plus = (iy + 1) % nmax
+        iy_minus = (iy - 1) % nmax
+
+        anglediff_next = angles[ix, iy] - angles[ix_plus, iy]
+        anglediff_prev = angles[ix, iy] - angles[ix_minus, iy]
+        anglediff_left = angles[ix, iy] - angles[ix, iy_minus]
+        anglediff_right = angles[ix, iy] - angles[ix, iy_plus]
+
+        #cosine performed, tried using non python commands for speedup in cython
+        cosdiff_next = cos(anglediff_next)
+        cosdiff_prev = cos(anglediff_prev)
+        cosdiff_left = cos(anglediff_left)
+        cosdiff_right = cos(anglediff_right)
+
+        # Perform operations directly on the memory view slice
+        current_energy[old_new, ix, iy] = (0.5 - 1.5 * pow(cosdiff_next, 2)
+                                           + 0.5 - 1.5 * pow(cosdiff_prev, 2)
+                                           + 0.5 - 1.5 * pow(cosdiff_left, 2)
+                                           + 0.5 - 1.5 * pow(cosdiff_right, 2))
+                                    
 cdef double one_energy(double[:, :] arr, int ix, int iy, int nmax):
     """
     Arguments:
@@ -450,7 +483,11 @@ def main(int nsteps,int nmax,double temp,int pflag, int thread_count):
         order[it] = get_order(lattice,nmax)
     final = openmp.omp_get_wtime()
     runtime = final-initial
-    
+
+    cdef double average_order = 0.0  
+    average_order = sum(order) / nsteps
+    #print(average_order)
+
     # Final outputs
     print("Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(nmax,nsteps,temp,order[nsteps-1],runtime))
     # Plot final frame of lattice and generate output file
