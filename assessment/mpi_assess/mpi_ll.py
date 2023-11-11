@@ -251,52 +251,30 @@ def get_order(arr,nmax):
     return eigenvalues.max()
 """
 #=======================================================================
-def MC_step(arr,Ts,nmax):
-    """
-    Arguments:
-	  arr (float(nmax,nmax)) = array that contains lattice data;
-	  Ts (float) = reduced temperature (range 0 to 2);
-      nmax (int) = side length of square lattice.
-    Description:
-      Function to perform one MC step, which consists of an average
-      of 1 attempted change per lattice site.  Working with reduced
-      temperature Ts = kT/epsilon.  Function returns the acceptance
-      ratio for information.  This is the fraction of attempted changes
-      that are successful.  Generally aim to keep this around 0.5 for
-      efficient simulation.
-	Returns:
-	  accept/(nmax**2) (float) = acceptance ratio for current MCS.
-    """
-    #
-    # Pre-compute some random numbers.  This is faster than
-    # using lots of individual calls.  "scale" sets the width
-    # of the distribution for the angle changes - increases
-    # with temperature.
-    scale=0.1+Ts
+def MC_step(arr, Ts, nmax, chunk_size):
+    scale = 0.1 + Ts
     accept = 0
-    xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
-    yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
-    aran = np.random.normal(scale=scale, size=(nmax,nmax))
-    for i in range(nmax):
+
+
+    xran = np.random.randint(0, high=nmax, size=(chunk_size, nmax))
+    yran = np.random.randint(0, high=nmax, size=(chunk_size, nmax))
+    aran = np.random.normal(scale=scale, size=(chunk_size, nmax))
+
+    for i in range(chunk_size):
         for j in range(nmax):
-            ix = xran[i,j]
-            iy = yran[i,j]
-            ang = aran[i,j]
-            en0 = one_energy(arr,ix,iy,nmax)
-            arr[ix,iy] += ang
-            en1 = one_energy(arr,ix,iy,nmax)
-            if en1<=en0:
+            ix = xran[i, j]
+            iy = yran[i, j]
+            ang = aran[i, j]
+            en0 = one_energy(arr, ix, iy, nmax)
+            arr[ix, iy] += ang
+            en1 = one_energy(arr, ix, iy, nmax)
+            if en1 <= en0 or np.exp(-(en1 - en0) / Ts) >= np.random.uniform():
                 accept += 1
             else:
-            # Now apply the Monte Carlo test - compare
-            # exp( -(E_new - E_old) / T* ) >= rand(0,1)
-                boltz = np.exp( -(en1 - en0) / Ts )
+                arr[ix, iy] -= ang
 
-                if boltz >= np.random.uniform(0.0,1.0):
-                    accept += 1
-                else:
-                    arr[ix,iy] -= ang
-    return accept/(nmax*nmax)
+    return accept
+
 #=======================================================================
 def main(program, nsteps, nmax, temp, pflag):
     """
@@ -311,6 +289,25 @@ def main(program, nsteps, nmax, temp, pflag):
     Returns:
       NULL
     """
+
+    comm = MPI.COMM_WORLD
+    rank = MPI.COMM_WORLD.Get_rank()
+    size = MPI.COMM_WORLD.Get_size()
+
+    if(rank==0):
+      initial = time.time()
+      chunks_counter = int(nmax/size)
+      division = nmax%size
+      chunk_sizes = [chunks_counter + (1 if r < division else 0) for r in range(size)]
+    else:
+        chunk_sizes = None
+
+    chunk_sizes = MPI.COMM_WORLD.bcast(chunk_sizes, root=0)
+    chunk_size = chunk_sizes[rank]
+    
+    
+    lattice = initdat(nmax)
+
     # Create and initialise lattice
     lattice = initdat(nmax)
     # Plot initial frame of lattice
