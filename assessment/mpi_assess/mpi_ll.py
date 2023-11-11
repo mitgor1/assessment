@@ -133,21 +133,8 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
         print("   {:05d}    {:6.4f} {:12.4f}  {:6.4f} ".format(i,ratio[i],energy[i],order[i]),file=FileOut)
     FileOut.close()
 #=======================================================================
+"""
 def one_energy(arr,ix,iy,nmax):
-    """
-    Arguments:
-	  arr (float(nmax,nmax)) = array that contains lattice data;
-	  ix (int) = x lattice coordinate of cell;
-	  iy (int) = y lattice coordinate of cell;
-      nmax (int) = side length of square lattice.
-    Description:
-      Function that computes the energy of a single cell of the
-      lattice taking into account periodic boundaries.  Working with
-      reduced energy (U/epsilon), equivalent to setting epsilon=1 in
-      equation (1) in the project notes.
-	Returns:
-	  en (float) = reduced energy of cell.
-    """
     en = 0.0
     ixp = (ix+1)%nmax # These are the coordinates
     ixm = (ix-1)%nmax # of the neighbours
@@ -166,7 +153,30 @@ def one_energy(arr,ix,iy,nmax):
     ang = arr[ix,iy]-arr[ix,iym]
     en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
     return en
+"""
 #=======================================================================
+
+#vectorised approach to one_energy for speedup:
+def one_energy(arr, ix, iy, nmax):
+    # Calculate neighbor indices with wraparound
+    ixp = (ix + 1) % nmax
+    ixm = (ix - 1) % nmax
+    iyp = (iy + 1) % nmax
+    iym = (iy - 1) % nmax
+
+    # Calculate differences with neighbors
+    xp_next = arr[ix, iy] - arr[ixp, iy]
+    xm_next = arr[ix, iy] - arr[ixm, iy]
+    yp_next = arr[ix, iy] - arr[ix, iyp]
+    ym_next = arr[ix, iy] - arr[ix, iym]
+
+    # Calculate energy
+    en = 0.5 * (1.0 - 3.0 * np.cos(xp_next)**2) + \
+         0.5 * (1.0 - 3.0 * np.cos(xm_next)**2) + \
+         0.5 * (1.0 - 3.0 * np.cos(yp_next)**2) + \
+         0.5 * (1.0 - 3.0 * np.cos(ym_next)**2)
+
+    return en
 
 """
 def all_energy(arr,nmax):
@@ -178,41 +188,52 @@ def all_energy(arr,nmax):
     return enall
 """
 
+#vectorised approach to all_energy, used the same one_energy function calculation and eliminated the for loops.
 def all_energy(arr, nmax):
-    arr_ip = np.roll(arr, -1, axis=0)
-    arr_im = np.roll(arr, 1, axis=0)
-    arr_jp = np.roll(arr, -1, axis=1)
-    arr_jm = np.roll(arr, 1, axis=1)
+    # Calculate neighbor indices with wraparound for the entire array
+    ix, iy = np.indices(arr.shape)
+    ixp = (ix + 1) % nmax
+    ixm = (ix - 1) % nmax
+    iyp = (iy + 1) % nmax
+    iym = (iy - 1) % nmax
 
-   
-    ang_xp = arr - arr_ip
-    ang_xm = arr - arr_im
-    ang_yp = arr - arr_jp
-    ang_ym = arr - arr_jm
+    # Calculate differences with neighbors
+    xp_next = arr[ix, iy] - arr[ixp, iy]
+    xm_next = arr[ix, iy] - arr[ixm, iy]
+    yp_next = arr[ix, iy] - arr[ix, iyp]
+    ym_next = arr[ix, iy] - arr[ix, iym]
 
-    
-    cos2_ang_xp = np.cos(ang_xp) ** 2
-    cos2_ang_xm = np.cos(ang_xm) ** 2
-    cos2_ang_yp = np.cos(ang_yp) ** 2
-    cos2_ang_ym = np.cos(ang_ym) ** 2
+    # Calculate energy contributions for each cell
+    en = 0.5 * (1.0 - 3.0 * np.cos(xp_next)**2) + \
+         0.5 * (1.0 - 3.0 * np.cos(xm_next)**2) + \
+         0.5 * (1.0 - 3.0 * np.cos(yp_next)**2) + \
+         0.5 * (1.0 - 3.0 * np.cos(ym_next)**2)
 
-    en = 0.5 * (1 - 3 * (cos2_ang_xp + cos2_ang_xm + cos2_ang_yp + cos2_ang_ym))
+    # Sum up all energies to get total energy
     enall = np.sum(en)
-    return enall
 
+    return enall
 #=======================================================================
+
+#vectorised version of get_order for speed up
+def get_order(arr, nmax):
+    # Create the 3D unit vector for each cell (i,j)
+    lab = np.vstack((np.cos(arr), np.sin(arr), np.zeros_like(arr))).reshape(3, nmax, nmax)
+    
+    # Calculate the Q tensor using einsum to replace the nested loops
+    Qab = 3.0 * np.einsum('aij,bij->ab', lab, lab) / (2.0 * nmax * nmax)
+    
+    # Adjust the subtraction of the delta part to match the original function's logic
+    delta = np.eye(3)
+    Qab -= delta / (2.0 * nmax * nmax) * nmax * nmax
+
+    # Calculate and return the maximum eigenvalue
+    eigenvalues, eigenvectors = np.linalg.eig(Qab)
+    return eigenvalues.max()
+
+
+"""
 def get_order(arr,nmax):
-    """
-    Arguments:
-	  arr (float(nmax,nmax)) = array that contains lattice data;
-      nmax (int) = side length of square lattice.
-    Description:
-      Function to calculate the order parameter of a lattice
-      using the Q tensor approach, as in equation (3) of the
-      project notes.  Function returns S_lattice = max(eigenvalues(Q_ab)).
-	Returns:
-	  max(eigenvalues(Qab)) (float) = order parameter for lattice.
-    """
     Qab = np.zeros((3,3))
     delta = np.eye(3,3)
     #
@@ -228,6 +249,7 @@ def get_order(arr,nmax):
     Qab = Qab/(2*nmax*nmax)
     eigenvalues,eigenvectors = np.linalg.eig(Qab)
     return eigenvalues.max()
+"""
 #=======================================================================
 def MC_step(arr,Ts,nmax):
     """
