@@ -276,12 +276,13 @@ def MC_step(arr, Ts, nmax, chunk_size):
     return accept
 
 #=======================================================================
+
 def main(program, nsteps, nmax, temp, pflag):
     """
     Arguments:
 	  program (string) = the name of the program;
 	  nsteps (int) = number of Monte Carlo steps (MCS) to perform;
-      nmax (int) = side length of square lattice to simulate;
+      nmax (int) = side length of square angles to simulate;
 	  temp (float) = reduced temperature (range 0 to 2);
 	  pflag (int) = a flag to control plotting.
     Description:
@@ -289,7 +290,6 @@ def main(program, nsteps, nmax, temp, pflag):
     Returns:
       NULL
     """
-
     comm = MPI.COMM_WORLD
     rank = MPI.COMM_WORLD.Get_rank()
     size = MPI.COMM_WORLD.Get_size()
@@ -306,35 +306,71 @@ def main(program, nsteps, nmax, temp, pflag):
     chunk_size = chunk_sizes[rank]
     
     
-    lattice = initdat(nmax)
+    angles = initdat(nmax)
 
-    # Create and initialise lattice
-    lattice = initdat(nmax)
-    # Plot initial frame of lattice
-    plotdat(lattice,pflag,nmax)
-    # Create arrays to store energy, acceptance ratio and order parameter
-    energy = np.zeros(nsteps+1,dtype=np.dtype)
-    ratio = np.zeros(nsteps+1,dtype=np.dtype)
-    order = np.zeros(nsteps+1,dtype=np.dtype)
-    # Set initial values in arrays
-    energy[0] = all_energy(lattice,nmax)
-    ratio[0] = 0.5 # ideal value
-    order[0] = get_order(lattice,nmax)
+    if(rank ==0):
+      
+      plotdat(angles,pflag,nmax,temp)
 
-    # Begin doing and timing some MC steps.
-    initial = time.time()
-    for it in range(1,nsteps+1):
-        ratio[it] = MC_step(lattice,temp,nmax)
-        energy[it] = all_energy(lattice,nmax)
-        order[it] = get_order(lattice,nmax)
-    final = time.time()
-    runtime = final-initial
+    energy_array = np.zeros(nsteps+1,dtype=np.dtype)
+    order_array = np.zeros(nsteps+1,dtype=np.dtype)
+    ratio_array = np.zeros(nsteps+1,dtype=np.dtype)
     
-    # Final outputs
-    print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
-    # Plot final frame of lattice and generate output file
-    savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
-    plotdat(lattice,pflag,nmax)
+    
+    energy_array[0] = all_energy(angles,nmax)
+    order_array[0] = get_order(angles,nmax)
+    ratio_array[0] = 0.5 
+    
+
+    rank_limit = 2*(rank) + (chunk_size-1)
+    
+    for it in range(1,nsteps+1):
+        aggreg_accept = MC_step(angles,temp, nmax,chunk_size)
+        
+        if rank!=0:
+          MPI.COMM_WORLD.send(aggreg_accept, 0, tag = 1)
+
+        if rank==0:
+          
+          accept = aggreg_accept
+          for r in range(1,size):
+              aggreg_accept = MPI.COMM_WORLD.recv(source=r, tag = 1)
+              accept += aggreg_accept
+
+          ratio_array[it] = accept/(nmax*nmax)
+        
+        order_array[it] = get_order(angles,nmax)
+        energy_array[it] = all_energy(angles,nmax)
+        
+    
+    slicer_rank = angles[2*rank:rank_limit, :]
+    
+    if rank != 0:
+    # Send this rank's section of the angles to rank 0
+        slicer_rank = angles[:chunk_size, :]
+        MPI.COMM_WORLD.Send([slicer_rank, MPI.FLOAT], dest=0, tag=2)
+
+    if rank == 0:
+        # Rank 0 combines all the angles segments
+        start_index = chunk_size
+        for r in range(1, size):
+            recv_chunk_size = nmax // size + (1 if r < division else 0)
+            MPI.COMM_WORLD.Recv([angles[start_index:start_index + recv_chunk_size, :], MPI.FLOAT], source=r, tag=2)
+            start_index += recv_chunk_size
+      
+        final = time.time()
+        runtime = final-initial
+    
+        
+        print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order_array[nsteps-1],runtime))
+        
+        savedat(angles,nsteps,temp,runtime,ratio_array,energy_array,order_array,nmax)
+        plotdat(angles,pflag,nmax,temp)
+
+        average_order = sum(order_array) / nsteps
+        print(average_order)
+
+
 #=======================================================================
 # Main part of program, getting command line arguments and calling
 # main simulation function.
