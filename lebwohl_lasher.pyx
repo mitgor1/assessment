@@ -290,125 +290,131 @@ cdef void line_energy(cnp.ndarray[cnp.float64_t, ndim=2] angles, double[:, :, :]
                                            + 0.5 - 1.5 * pow(cosdiff_right, 2))
 
 
-cdef inline double random_const():
-    return rand() / float(RAND_MAX)
+cdef void MC_update(cnp.ndarray[cnp.float64_t, ndim=2] angles, double[:, :] rand_perturb, double[:, :, :] current_energy, double Ts, int nmax, double[:] accept_ratio, int it):
+    cdef int ix, iy, total_accept = 0
+    cdef double energy_diff, metrop_factor, accept
 
-cdef inline double energy_diff_calc(double[:, :] arr, int ix, int iy, int nmax, double ang):
-    cdef:
-        double placement = arr[ix, iy]
-        double en_0 = one_energy(arr, ix, iy, nmax)
-    arr[ix, iy] += ang
-    cdef double en_1 = one_energy(arr, ix, iy, nmax)
-    arr[ix, iy] = placement
-    return en_1 - en_0
+    for ix in range(nmax):
+            # Compute old energy for the row
+            #line_energy(angles, current_energy[0, ix, :], ix, nmax)
+            line_energy(angles, current_energy, ix, nmax, 0)  
+            
+            # Perturb the angles randomly for the row
+            for iy in range(nmax):
+                angles[ix, iy] += rand_perturb[ix, iy]
 
-def MC_step(cnp.ndarray[cnp.float64_t, ndim=2] arr, double Ts, int nmax):
-    """
-    Arguments:
-	  arr (float(nmax,nmax)) = array that contains lattice data;
-	  Ts (float) = reduced temperature (range 0 to 2);
-      nmax (int) = side length of square lattice.
-    Description:
-      Function to perform one MC step, which consists of an average
-      of 1 attempted change per lattice site.  Working with reduced
-      temperature Ts = kT/epsilon.  Function returns the acceptance
-      ratio for information.  This is the fraction of attempted changes
-      that are successful.  Generally aim to keep this around 0.5 for
-      efficient simulation.
-	Returns:
-	  accept/(nmax**2) (float) = acceptance ratio for current MCS.
-    """
-    #
-    # Pre-compute some random numbers.  This is faster than
-    # using lots of individual calls.  "scale" sets the width
-    # of the distribution for the angle changes - increases
-    # with temperature.
+            # Compute new energy for the row
+            #line_energy(angles, current_energy[1, ix, :], ix, nmax)
+            line_energy(angles, current_energy, ix, nmax, 1)  # for new energy
 
-    cdef:
-        double scale = 0.1 + Ts
-        int accept = 0
-        int i, j, ix, iy
-        double ang, en_diff, boltz
-        cnp.ndarray[cnp.int_t, ndim=2] xran = np.random.randint(0, nmax, size=(nmax, nmax))
-        cnp.ndarray[cnp.int_t, ndim=2] yran = np.random.randint(0, nmax, size=(nmax, nmax))
-        cnp.ndarray[cnp.float64_t, ndim=2] aran = np.random.normal(scale=scale, size=(nmax, nmax))
+            # Determine which changes to accept for the row
+            for iy in range(nmax):
+                energy_diff = current_energy[1, ix, iy] - current_energy[0, ix, iy]
+                metrop_factor = exp(-energy_diff / Ts)
+                
+                # Random float between 0 and 1
+                accept = rand() / RAND_MAX
+                
+                # Decide whether to accept the new angle based on the Metropolis criterion
+                if energy_diff <= 0 or metrop_factor >= accept:
+                    total_accept += 1  # This angle change is accepted
+                else:
+                    # Revert the angle if not accepted
+                    current_energy[1, ix, iy] = current_energy[0, ix, iy]
+                    angles[ix, iy] -= rand_perturb[ix, iy]
 
-    for i in range(nmax):
-        for j in range(nmax):
-            ix = xran[i, j]
-            iy = yran[i, j]
-            ang = aran[i, j]
+    # Record the acceptance ratio for the entire lattice outside the parallel block
+    accept_ratio[it] += total_accept / (nmax * nmax)
 
-            en_diff = energy_diff_calc(arr, ix, iy, nmax, ang)
-            if en_diff <= 0:
-                arr[ix, iy] += ang
-                accept += 1
-            else:
-                boltz = exp(-en_diff / Ts)
-                if boltz >= random_const():
-                    arr[ix, iy] += ang
-                    accept += 1
 
-    return accept / (nmax * nmax)
+def MC_step(cnp.ndarray[cnp.float64_t, ndim=2] angles, double Ts, int nmax, cnp.ndarray[cnp.float64_t, ndim=1] energy_array , cnp.ndarray[cnp.float64_t, ndim=3] order_array, double[:] accept_ratio, int it):
+    # Generate random perturbations
+    cdef double scale=0.1+Ts
+    #cdef double[:, :] rand_perturb = gen_noise_matrix(nmax,scale)
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] rand_perturb = np.random.normal(scale=scale, size=(nmax,nmax))
+    cdef double[:, :, :] current_energy = np.zeros((2, nmax, nmax))
+    # Perform the MC update step
+    MC_update(angles, rand_perturb, current_energy, Ts, nmax, accept_ratio, it)
+    #MC_update(angles, rand_perturb, current_energy, Ts, nmax, accept_ratio, it, thread_count)
 
-def main(int nsteps,int nmax,double temp,int pflag, int thread_count):
-    """
-    Arguments:
-	  program (string) = the name of the program;
-	  nsteps (int) = number of Monte Carlo steps (MCS) to perform;
-      nmax (int) = side length of square lattice to simulate;
-	  temp (float) = reduced temperature (range 0 to 2);
-	  pflag (int) = a flag to control plotting.
-    Description:
-      This is the main function running the Lebwohl-Lasher simulation.
-    Returns:
-      NULL
-    """
+    # Sum up the new current_energy to get the total energy
+    energy_array[it] = np.sum(np.asarray(current_energy[1]))
+
+    # Calculate order parameter Q
+    cdef double[:, :] Qab = get_Qab(angles, nmax)
+    for i in range(2):
+        for j in range(2):
+            #order_array[it, i * 2 + j] = Qab[i, j]
+            order_array[it, i, j] = Qab[i,j]
+
+    #return np.asarray(angles), np.asarray(current_energy), np.asarray(energy_array), order_array, accept_ratio
+    #return (np.array(angles, copy=False), np.array(current_energy, copy=False), energy_array, order_array, accept_ratio)
+    #return angles, current_energy, energy_array, order_array, accept_ratio
+    return (np.asarray(angles), np.asarray(current_energy), energy_array, order_array, np.asarray(accept_ratio))
+
+
+def main(int nsteps,int nmax,double temp,int pflag):
+
     # Create and initialise lattice
-    cdef cnp.ndarray[cnp.float64_t, ndim=2] lattice = initdat(nmax)
-    # Plot initial frame of lattice
-    plotdat(lattice,pflag,nmax)
+    #cdef cnp.ndarray[cnp.float64_t, ndim=2] angles = initdat(nmax)
     # Create arrays to store energy, acceptance ratio and order parameter
-    cdef cnp.ndarray[cnp.float64_t, ndim=1] energy = np.zeros(nsteps+1)
-    cdef cnp.ndarray[cnp.float64_t, ndim=1] ratio = np.zeros(nsteps+1)
-    cdef cnp.ndarray[cnp.float64_t, ndim=1] order = np.zeros(nsteps+1)
+    cdef cnp.ndarray[cnp.float64_t, ndim=3] order_array = np.zeros((nsteps + 1, 2, 2))
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] energy_array = np.zeros(nsteps + 1)
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] accept_ratio = np.zeros(nsteps + 1)
+    c_np_array = np.zeros((2, nmax, nmax), dtype=np.float64)
+    cdef double[:, :, :] current_energy = c_np_array
+    #double[:, :] angles
+    #double[:] order
+    cdef double runtime
+    cdef int it
+    cdef double Ts = temp
+    srand(time(NULL))
+
     
-    # Set initial values in arrays
-    energy[0] = all_energy(lattice,nmax,thread_count)
-    ratio[0] = 0.5 # ideal value
-    order[0] = get_order(lattice,nmax)
+    # Plot initial frame of lattice
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] angles = initdat(nmax)
+    #cdef double[:, :] angles = initdat(nmax)
+    #angles = initdat(nmax)
+    plotdat(angles, current_energy, pflag, nmax)
+    
 
     # Begin doing and timing some MC steps.
     initial = openmp.omp_get_wtime()
-    cdef int it
-    for it in range(1,nsteps+1):
-        ratio[it] = MC_step(lattice,temp,nmax)
-        energy[it] = all_energy(lattice,nmax,thread_count)
-        order[it] = get_order(lattice,nmax)
+    #cdef double initial_time = time.time()
+
+    for it in range(nsteps):
+        angles, current_energy, energy_array, order_array, accept_ratio = MC_step(angles, Ts, nmax, energy_array, order_array, accept_ratio, it)
+
+    #cdef double[:] order = get_order(order_array, nsteps)
+    cdef cnp.ndarray[cnp.float64_t, ndim=1] order = get_order(order_array, nsteps)
+    
+    # Record the final time and compute the runtime
+    #cdef double final_time = time.time()
+    #runtime = final_time - initial_time
+
     final = openmp.omp_get_wtime()
     runtime = final-initial
+    
 
-    cdef double average_order = 0.0  
-    average_order = sum(order) / nsteps
-    #print(average_order)
-
+    
     # Final outputs
-    print("Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(nmax,nsteps,temp,order[nsteps-1],runtime))
+    print("Program: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(nmax,nsteps,temp,order[nsteps-1],runtime))
     # Plot final frame of lattice and generate output file
-    savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
-    plotdat(lattice,pflag,nmax)
+    plotdat(angles, current_energy, pflag, nmax)
+    # Save data to a file
+    savedat(angles, nsteps, Ts, runtime, accept_ratio, energy_array, order, nmax)
 #=======================================================================
 # Main part of program, getting command line arguments and calling
 # main simulation function.
 #
 if __name__ == '__main__':
-    if int(len(sys.argv)) == 6:
+    if int(len(sys.argv)) == 4:
         ITERATIONS = int(sys.argv[1])
         SIZE = int(sys.argv[2])
         TEMPERATURE = float(sys.argv[3])
         PLOTFLAG = int(sys.argv[4])
-        THREADS = int(sys.argv[5])
-        main(ITERATIONS, SIZE, TEMPERATURE, PLOTFLAG, THREADS)
+        #THREADS = int(sys.argv[5]) 
+        main(ITERATIONS, SIZE, TEMPERATURE, PLOTFLAG)
     else:
-        print("Usage: python {} <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG> <THREADS>".format(sys.argv[0]))
+        print("Usage: python {} <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG>".format(sys.argv[0]))
 #=======================================================================
