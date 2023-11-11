@@ -49,45 +49,26 @@ def initdat(nmax):
     arr = np.random.random_sample((nmax,nmax))*2.0*np.pi
     return arr
 #=======================================================================
-def plotdat(arr,pflag,nmax):
-    """
-    Arguments:
-	  arr (float(nmax,nmax)) = array that contains lattice data;
-	  pflag (int) = parameter to control plotting;
-      nmax (int) = side length of square lattice.
-    Description:
-      Function to make a pretty plot of the data array.  Makes use of the
-      quiver plot style in matplotlib.  Use pflag to control style:
-        pflag = 0 for no plot (for scripted operation);
-        pflag = 1 for energy plot;
-        pflag = 2 for angles plot;
-        pflag = 3 for black plot.
-	  The angles plot uses a cyclic color map representing the range from
-	  0 to pi.  The energy plot is normalised to the energy range of the
-	  current frame.
-	Returns:
-      NULL
-    """
+def plotdat(angles,current_energy,pflag,nmax):
     if pflag==0:
         return
-    u = np.cos(arr)
-    v = np.sin(arr)
+    u = np.cos(angles)
+    v = np.sin(angles)
     x = np.arange(nmax)
     y = np.arange(nmax)
-    cols = np.zeros((nmax,nmax))
     if pflag==1: # colour the arrows according to energy
         mpl.rc('image', cmap='rainbow')
-        for i in range(nmax):
-            for j in range(nmax):
-                cols[i,j] = one_energy(arr,i,j,nmax)
+        #cols = np.asarray(current_energy[0, :])
+        cols = current_energy
+        #print("Shapes - u: ({}, {}), v: ({}, {}), x: {}, y: {}, cols: ({}, {})".format(u.shape[0], u.shape[1], v.shape[0], v.shape[1],x.size, y.size, cols.shape[0], cols.shape[1]))
         norm = plt.Normalize(cols.min(), cols.max())
     elif pflag==2: # colour the arrows according to angle
         mpl.rc('image', cmap='hsv')
-        cols = arr%np.pi
+        cols = angles%np.pi
         norm = plt.Normalize(vmin=0, vmax=np.pi)
     else:
         mpl.rc('image', cmap='gist_gray')
-        cols = np.zeros_like(arr)
+        cols = np.zeros_like(angles)
         norm = plt.Normalize(vmin=0, vmax=1)
 
     quiveropts = dict(headlength=0,pivot='middle',headwidth=1,scale=1.1*nmax)
@@ -97,23 +78,6 @@ def plotdat(arr,pflag,nmax):
     plt.show()
 #=======================================================================
 def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
-    """
-    Arguments:
-	  arr (float(nmax,nmax)) = array that contains lattice data;
-	  nsteps (int) = number of Monte Carlo steps (MCS) performed;
-	  Ts (float) = reduced temperature (range 0 to 2);
-	  ratio (float(nsteps)) = array of acceptance ratios per MCS;
-	  energy (float(nsteps)) = array of reduced energies per MCS;
-	  order (float(nsteps)) = array of order parameters per MCS;
-      nmax (int) = side length of square lattice to simulated.
-    Description:
-      Function to save the energy, order and acceptance ratio
-      per Monte Carlo step to text file.  Also saves run data in the
-      header.  Filenames are generated automatically based on
-      date and time at beginning of execution.
-	Returns:
-	  NULL
-    """
     # Create filename based on current date and time.
     current_datetime = datetime.datetime.now().strftime("%a-%d-%b-%Y-at-%I-%M-%S%p")
     filename = "LL-Output-{:s}.txt".format(current_datetime)
@@ -268,6 +232,37 @@ def precompute_randoms(nmax, Ts):
     aran = np.random.normal(scale=scale, size=(nmax, nmax))
     pre_rand = np.random.uniform(0.0, 1.0, size=(nmax, nmax))
     return xran, yran, aran, pre_rand
+
+@njit(parallel=True)
+def MC_update(angles, rand_perturb, current_energy, Ts, nmax, accept_ratio, it):
+    total_accept = 0 
+    #line by line or row sequential updating 
+    for ix in prange(nmax):
+        #old energy computation for current row
+        line_energy(angles, current_energy[0, ix, :], ix, nmax)
+
+        #randome perturbation of row angles
+        angles[ix, :] += rand_perturb[ix, :]
+
+        #new row energy computation
+        line_energy(angles, current_energy[1, ix, :], ix, nmax)
+
+        #acceptance checks based off metrop factor criterias like before logic
+        energy_diff = current_energy[1, ix, :] - current_energy[0, ix, :]
+        metrop_factor = np.exp(-energy_diff / Ts)
+        accept = (energy_diff <= 0) + ((energy_diff > 0) * (metrop_factor >= np.random.rand(nmax)))
+
+        #appended based off acceptance
+        current_energy[1, ix, :] = accept * current_energy[1, ix, :] + (1 - accept) * current_energy[0, ix, :]
+
+        #angles changed based off acceptance as well and acceptence calculation done
+        angles[ix, :] -= (1 - accept) * rand_perturb[ix, :]
+        total_accept += np.sum(accept)
+
+    #whole angles lattice acceptance:
+    accept_ratio[it] += total_accept / (nmax**2)
+
+
 
 @njit(parallel=True)
 def MC_step(arr, Ts, nmax, xran, yran, aran, pre_rand):
