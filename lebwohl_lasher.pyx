@@ -46,91 +46,68 @@ from libc.math cimport sqrt, log, M_PI
 from libc.math cimport cos, pow
 from libc.time cimport time
 
+# Define a Cython function to initialize a lattice
 def initdat(int nmax):
     """
     Arguments:
-      nmax (int) = size of lattice to create (nmax,nmax).
+      nmax (int) = size of lattice to create (nmax, nmax).
     Description:
-      Function to create and initialise the main data array that holds
-      the lattice.  Will return a square lattice (size nmax x nmax)
-	  initialised with random orientations in the range [0,2pi].
-	Returns:
-	  arr (float(nmax,nmax)) = array to hold lattice.
+      Function to create and initialize the main data array that holds
+      the lattice. Will return a square lattice (size nmax x nmax)
+      initialized with random orientations in the range [0, 2π].
+    Returns:
+      arr (float[nmax, nmax]) = array to hold lattice.
     """
+    # Declare a memory view for a double precision 2D array 'arr'
+    # This memory view efficiently accesses the underlying array
     cdef double[:, :] arr = np.random.random_sample((nmax, nmax)) * 2.0 * np.pi
+    
+    # Convert the Cython memory view to a NumPy array and return it
     return np.asarray(arr)
 
-#=======================================================================
-def plotdat(cnp.ndarray[cnp.float64_t, ndim=2] arr, int pflag, int nmax):
-    """
-    Arguments:
-	  arr (float(nmax,nmax)) = array that contains lattice data;
-	  pflag (int) = parameter to control plotting;
-      nmax (int) = side length of square lattice.
-    Description:
-      Function to make a pretty plot of the data array.  Makes use of the
-      quiver plot style in matplotlib.  Use pflag to control style:
-        pflag = 0 for no plot (for scripted operation);
-        pflag = 1 for energy plot;
-        pflag = 2 for angles plot;
-        pflag = 3 for black plot.
-	  The angles plot uses a cyclic color map representing the range from
-	  0 to pi.  The energy plot is normalised to the energy range of the
-	  current frame.
-	Returns:
-      NULL
-    """
-    if pflag==0:
+def plotdat(cnp.ndarray[cnp.float64_t, ndim=2] angles,double[:, :, :] current_energy,int pflag,int nmax):
+    
+    # Only proceed if pflag is not zero
+    if pflag == 0:
         return
+    
+    # Perform the calculations
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] u = np.cos(angles)
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] v = np.sin(angles)
+    cdef cnp.ndarray[cnp.int64_t, ndim=1] x = np.arange(nmax, dtype=np.int64)
+    cdef cnp.ndarray[cnp.int64_t, ndim=1] y = np.arange(nmax, dtype=np.int64)
 
-    cdef:
-        int i, j
-        cnp.ndarray[cnp.float64_t, ndim=2] u = np.cos(arr)
-        cnp.ndarray[cnp.float64_t, ndim=2] v = np.sin(arr)
-        cnp.ndarray[cnp.int_t, ndim=1] x = np.arange(nmax)
-        cnp.ndarray[cnp.int_t, ndim=1] y = np.arange(nmax)
-        cnp.ndarray[cnp.float64_t, ndim=2] cols = np.zeros((nmax, nmax))
 
-    if pflag==1: # colour the arrows according to energy
+    # Handle the pflag logic
+    if pflag == 1:  # colour the arrows according to energy
         mpl.rc('image', cmap='rainbow')
-        for i in range(nmax):
-            for j in range(nmax):
-                cols[i,j] = one_energy(arr,i,j,nmax)
+        #cols = np.asarray(current_energy).flatten()
+        # Now cols will have the same total number of elements as u and v
+        #assert cols.shape[0] == u.size  # This should be true if current_energy was initially the same shape as u and v
+        #print("Shapes - u: ({}, {}), v: ({}, {}), x: {}, y: {}, cols: ({}, {})".format(u.shape[0], u.shape[1], v.shape[0], v.shape[1],x.size, y.size, cols.shape[0], cols.shape[1]))
+        cols = np.asarray(current_energy[0, :, :])  # This slices out the first 2D layer of the 3D array.
+        #cols = np.asarray(current_energy[1, :, :])  # This slices out the second 2D layer of the 3D array.
+        #cols = np.asarray(current_energy)
+        # Convert to a NumPy array to use `min` and `max`
         norm = plt.Normalize(cols.min(), cols.max())
-    elif pflag==2: # colour the arrows according to angle
+    elif pflag == 2:  # colour the arrows according to angle
         mpl.rc('image', cmap='hsv')
-        cols = arr%np.pi
+        cols = angles % np.pi
         norm = plt.Normalize(vmin=0, vmax=np.pi)
     else:
         mpl.rc('image', cmap='gist_gray')
-        cols = np.zeros_like(arr)
+        cols = np.zeros_like(angles)
         norm = plt.Normalize(vmin=0, vmax=1)
-
-    quiveropts = dict(headlength=0,pivot='middle',headwidth=1,scale=1.1*nmax)
+    
+    # Create the quiver plot
+    quiveropts = dict(headlength=0, pivot='middle', headwidth=1, scale=1.1*nmax)
     fig, ax = plt.subplots()
-    q = ax.quiver(x, y, u, v, cols,norm=norm, **quiveropts)
+    q = ax.quiver(x, y, u, v, cols, norm=norm, **quiveropts)
     ax.set_aspect('equal')
-    plt.savefig(f"plot_{nmax}.png")
+    plt.show()
 
 #=======================================================================
-def savedat(cnp.ndarray[cnp.float64_t, ndim=2] arr,int nsteps,double Ts,double runtime,cnp.ndarray[cnp.float64_t, ndim=1] ratio,cnp.ndarray[cnp.float64_t, ndim=1] energy,cnp.ndarray[cnp.float64_t, ndim=1] order,int nmax):          
-    """
-    Arguments:
-	  arr (float(nmax,nmax)) = array that contains lattice data;
-	  nsteps (int) = number of Monte Carlo steps (MCS) performed;
-	  Ts (float) = reduced temperature (range 0 to 2);
-	  ratio (float(nsteps)) = array of acceptance ratios per MCS;
-	  energy (float(nsteps)) = array of reduced energies per MCS;
-	  order (float(nsteps)) = array of order parameters per MCS;
-      nmax (int) = side length of square lattice to simulated.
-    Description:
-      Function to save the energy, order and acceptance ratio
-      per Monte Carlo step to text file.  Also saves run data in the
-      header.  Filenames are generated automatically based on
-      date and time at beginning of execution.
-	Returns:
-	  NULL
-    """
+def savedat(cnp.ndarray[cnp.float64_t, ndim=2] arr,int nsteps,double Ts,double runtime,cnp.ndarray[cnp.float64_t, ndim=1] ratio,cnp.ndarray[cnp.float64_t, ndim=1] energy,cnp.ndarray[cnp.float64_t, ndim=1] order,int nmax):        
     # Create filename based on current date and time.
     current_datetime = datetime.datetime.now().strftime("%a-%d-%b-%Y-at-%I-%M-%S%p")
     filename = "LL-Output-{:s}-{}-{}.txt".format(current_datetime,nmax,Ts)
@@ -151,52 +128,67 @@ def savedat(cnp.ndarray[cnp.float64_t, ndim=2] arr,int nsteps,double Ts,double r
     FileOut.close()
 #=======================================================================
 
+# Define a function to read data from a file and parse it into a list of dictionaries
 def read_file(file_path):
+    # Open the file for reading
     with open(file_path, 'r') as file:
         lines = file.readlines()
     
+    # Initialize an empty list to store the parsed data
     data = []
+    
+    # Loop through each line in the file
     for line in lines:
+        # Check if the line is not empty and starts with a digit
         if line.strip() and line[0].isdigit():  
+            # Split the line into parts based on whitespace
             parts = line.split()
             
+            # Create a dictionary to store the parsed data for each step
             step_data = {
                 'MC step': int(parts[0]),
                 'Ratio': float(parts[1]),
                 'Energy': float(parts[2]),
                 'Order': float(parts[3])
             }
-            data.append(step_data)
             
+            # Append the step data to the list
+            data.append(step_data)
+    
+    # Return the parsed data as a list of dictionaries
     return data
 
+# Define a function to compare values between two datasets with a specified tolerance
 def compare_values(reference_data, comparison_data, tolerance=0.05):
+    # Initialize dictionaries to store counts of matches and entries for each category
     match_counts = {'Energy': 0, 'Order': 0, 'Ratio': 0}
     entry_counts = {'Energy': 0, 'Order': 0, 'Ratio': 0}
 
+    # Iterate through corresponding entries in the reference and comparison datasets
     for ref_entry, comp_entry in zip(reference_data, comparison_data):
         
+        # Check if the energy difference is within the specified tolerance
         if abs(ref_entry['Energy'] - comp_entry['Energy']) <= tolerance * abs(ref_entry['Energy']):
             match_counts['Energy'] += 1
         entry_counts['Energy'] += 1
 
-        
+        # Check if the order difference is within the specified tolerance
         if abs(ref_entry['Order'] - comp_entry['Order']) <= tolerance * abs(ref_entry['Order']):
             match_counts['Order'] += 1
         entry_counts['Order'] += 1
 
-        
+        # Check if the ratio difference is within the specified tolerance
         if abs(ref_entry['Ratio'] - comp_entry['Ratio']) <= tolerance * abs(ref_entry['Ratio']):
             match_counts['Ratio'] += 1
         entry_counts['Ratio'] += 1
 
-    
+    # Calculate similarity percentages for each category
     similarity_percentages = {
         category: (match_counts[category] / entry_counts[category]) * 100
         for category in match_counts
     }
 
-    
+    # Calculate the overall similarity percentage
     total_match_count = sum(match_counts.values())
     total_entry_count = sum(entry_counts.values())
     overall_similarity_percentage = (total_match_count / total_entry_count) * 100
@@ -206,7 +198,7 @@ def compare_values(reference_data, comparison_data, tolerance=0.05):
     for category, percent in similarity_percentages.items():
         print(f"{category}: {percent:.2f}%")
     print(f"Overall: {overall_similarity_percentage:.2f}%")
-    
+
 """
 file_1 = "LL-Output-{:s}-{}-{}.txt".format(current_datetime,nmax,Ts)
 file_2 = 'comparison.txt'
@@ -368,7 +360,6 @@ def main(int nsteps,int nmax,double temp,int pflag):
     cdef double runtime
     cdef int it
     cdef double Ts = temp
-    srand(time(NULL))
 
     
     # Plot initial frame of lattice
