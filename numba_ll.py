@@ -219,7 +219,9 @@ def MC_update(angles, rand_perturb, current_energy, Ts, nmax, accept_ratio, it):
 
 @njit
 def MC_step(angles, Ts, nmax, energy_array, order_array, accept_ratio, it):
-    rand_perturb = gen_noise_matrix(nmax)  # Generate random angles
+    # using the noise matrix function to get the random angles
+    rand_perturb = gen_noise_matrix(nmax)  
+    #initiating energy to use for mc_steps
     current_energy = np.zeros((2, nmax, nmax))
 
     # Perform the MC step sequentially for all rows
