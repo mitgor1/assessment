@@ -293,102 +293,100 @@ def MC_step(arr, Ts, nmax, chunk_size):
 
 def main(program, nsteps, nmax, temp, pflag):
     """
-    Arguments:
-	  program (string) = the name of the program;
-	  nsteps (int) = number of Monte Carlo steps (MCS) to perform;
-      nmax (int) = side length of square angles to simulate;
-	  temp (float) = reduced temperature (range 0 to 2);
-	  pflag (int) = a flag to control plotting.
-    Description:
-      This is the main function running the Lebwohl-Lasher simulation.
-    Returns:
-      NULL
+    Main function for running a distributed Monte Carlo simulation
+    using the Lebwohl-Lasher model.
     """
+
+    #mPI setup 
     comm = MPI.COMM_WORLD
     rank = MPI.COMM_WORLD.Get_rank()
     size = MPI.COMM_WORLD.Get_size()
 
-    if(rank==0):
-      initial = time.time()
-      chunks_counter = int(nmax/size)
-      division = nmax%size
-      chunk_sizes = [chunks_counter + (1 if r < division else 0) for r in range(size)]
+    # Rank 0 calculates chunk sizes for distribution among processes
+    if(rank == 0):
+        initial = time.time()
+        chunks_counter = int(nmax / size)
+        division = nmax % size
+        chunk_sizes = [chunks_counter + (1 if r < division else 0) for r in range(size)]
     else:
         chunk_sizes = None
 
-    chunk_sizes = MPI.COMM_WORLD.bcast(chunk_sizes, root=0)
+    # Broadcasting chunk sizes to all processes
+    chunk_sizes = comm.bcast(chunk_sizes, root=0)
     chunk_size = chunk_sizes[rank]
-    
-    
+
+    # Initialize lattice angles
     angles = initdat(nmax)
 
-    if(rank ==0):
-      
-      plotdat(angles,pflag,nmax,temp)
+    # Rank 0 plots initial data only if in rank 0
+    if(rank == 0):
+        plotdat(angles, pflag, nmax, temp)
 
-    energy_array = np.zeros(nsteps+1,dtype=np.dtype)
-    order_array = np.zeros(nsteps+1,dtype=np.dtype)
-    ratio_array = np.zeros(nsteps+1,dtype=np.dtype)
-    
-    
-    energy_array[0] = all_energy(angles,nmax)
-    order_array[0] = get_order(angles,nmax)
-    ratio_array[0] = 0.5 
-    
+    #made the arrayss
+    energy_array = np.zeros(nsteps + 1, dtype=np.dtype)
+    order_array = np.zeros(nsteps + 1, dtype=np.dtype)
+    ratio_array = np.zeros(nsteps + 1, dtype=np.dtype)
 
-    rank_limit = 2*(rank) + (chunk_size-1)
-    
-    for it in range(1,nsteps+1):
-        aggreg_accept = MC_step(angles,temp, nmax,chunk_size)
-        
-        if rank!=0:
-          MPI.COMM_WORLD.send(aggreg_accept, 0, tag = 1)
+    #inital values in the arrays
+    energy_array[0] = all_energy(angles, nmax)
+    order_array[0] = get_order(angles, nmax)
+    ratio_array[0] = 0.5
 
-        if rank==0:
-          
-          accept = aggreg_accept
-          for r in range(1,size):
-              aggreg_accept = MPI.COMM_WORLD.recv(source=r, tag = 1)
-              accept += aggreg_accept
+    # Rank-specific limit for processing lattice angles
+    rank_limit = 2 * rank + (chunk_size - 1)
 
-          ratio_array[it] = accept/(nmax*nmax)
-        
-        order_array[it] = get_order(angles,nmax)
-        energy_array[it] = all_energy(angles,nmax)
-        
-    
-    slicer_rank = angles[2*rank:rank_limit, :]
-    
+    # Montcarlo simulation loop
+    for it in range(1, nsteps + 1):
+        aggreg_accept = MC_step(angles, temp, nmax, chunk_size)
+
+        # Non-rank 0 processes send their acceptance counts to rank 0
+        if rank != 0:
+            comm.send(aggreg_accept, 0, tag=1)
+
+        # Rank 0 aggregates acceptance counts and calculates ratios
+        if rank == 0:
+            accept = aggreg_accept
+            for r in range(1, size):
+                aggreg_accept = comm.recv(source=r, tag=1)
+                accept += aggreg_accept
+
+            ratio_array[it] = accept / (nmax * nmax)
+
+        # Update order and energy arrays
+        order_array[it] = get_order(angles, nmax)
+        energy_array[it] = all_energy(angles, nmax)
+
+    #slicing through angles based on the max rank limit
+    slicer_rank = angles[2 * rank:rank_limit, :]
+
+    #non-rank 0 processes send their angle slices to rank 0
     if rank != 0:
-    # Send this rank's section of the angles to rank 0
         slicer_rank = angles[:chunk_size, :]
-        MPI.COMM_WORLD.Send([slicer_rank, MPI.FLOAT], dest=0, tag=2)
+        comm.Send([slicer_rank, MPI.FLOAT], dest=0, tag=2)
 
+    #rank 0 receives and combines angle slices from all processes
     if rank == 0:
-        # Rank 0 combines all the angles segments
         start_index = chunk_size
         for r in range(1, size):
             recv_chunk_size = nmax // size + (1 if r < division else 0)
-            MPI.COMM_WORLD.Recv([angles[start_index:start_index + recv_chunk_size, :], MPI.FLOAT], source=r, tag=2)
+            comm.Recv([angles[start_index:start_index + recv_chunk_size, :], MPI.FLOAT], source=r, tag=2)
             start_index += recv_chunk_size
-      
+
+        #runtimee
         final = time.time()
-        runtime = final-initial
-    
-        
-        print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order_array[nsteps-1],runtime))
-        
-        savedat(angles,nsteps,temp,runtime,ratio_array,energy_array,order_array,nmax)
-        plotdat(angles,pflag,nmax,temp)
+        runtime = final - initial
+        print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax, nsteps, temp, order_array[nsteps - 1], runtime))
 
-        average_order = sum(order_array) / nsteps
-        print(average_order)
+        # Save and plot data
+        savedat(angles, nsteps, temp, runtime, ratio_array, energy_array, order_array, nmax)
+        plotdat(angles, pflag, nmax, temp)
+
+        #calculate and print average order parameter
+        #average_order = sum(order_array) / nsteps
+        #print(average_order)
 
 
-#=======================================================================
-# Main part of program, getting command line arguments and calling
-# main simulation function.
-#
+
 if __name__ == '__main__':
     if int(len(sys.argv)) == 5:
         PROGNAME = sys.argv[0]
@@ -399,4 +397,4 @@ if __name__ == '__main__':
         main(PROGNAME, ITERATIONS, SIZE, TEMPERATURE, PLOTFLAG)
     else:
         print("Usage: python {} <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG>".format(sys.argv[0]))
-#=======================================================================
+
