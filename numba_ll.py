@@ -171,18 +171,18 @@ def get_order(order_array, nsteps):
 # Define a function with njit compilation enabled
 @njit
 def gen_noise_matrix(nmax):
-    # Create an empty array 'noise_values' to store random noise values
+    #create an empty array to store random noise values
     noise_values = np.empty(nmax**2, dtype=np.float64)
     
-    # Loop through the indices of 'noise_values'
+    #loop through the indices of 'noise_values'
     for index in range(len(noise_values)):
-        # Generate a random normal value and assign it to 'noise_values[index]'
+        #generate a random normal value and assign it 
         noise_values[index] = np.random.normal()
     
-    # Reshape the 1D 'noise_values' array into a 2D 'noise_matrix'
+    #reshape the 1D array into a 2D noise_matrix for usage outside
     noise_matrix = noise_values.reshape((nmax, nmax))
     
-    # Return the resulting 'noise_matrix'
+    # Return the resulting 
     return noise_matrix
 
 
