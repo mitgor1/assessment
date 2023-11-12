@@ -96,142 +96,95 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
     for i in range(nsteps+1):
         print("   {:05d}    {:6.4f} {:12.4f}  {:6.4f} ".format(i,ratio[i],energy[i],order[i]),file=FileOut)
     FileOut.close()
-#=======================================================================
 
 @njit
 def line_energy(angles, current_energy, ix, nmax):
-    # Calculate index of previous and next rows accounting for periodic boundary conditions
+    #calculating the index of previous and next rows accounting for periodic boundary conditions
     ix_plus = (ix + 1) % nmax
     ix_minus = (ix - 1) % nmax
 
-    # Calculate angle differences for the row
+    #calculating the angle differences for the row
     anglediff_next = angles[ix, :] - angles[ix_plus, :]
     anglediff_prev = angles[ix, :] - angles[ix_minus, :]
     anglediff_left = angles[ix, :] - np.roll(angles[ix, :], -1)
     anglediff_right = angles[ix, :] - np.roll(angles[ix, :], 1)
 
-    # Now, take the cosine of the angle differences
+    #taking the cosine of the angle differences
     cosdiff_next = np.cos(anglediff_next)
     cosdiff_prev = np.cos(anglediff_prev)
     cosdiff_left = np.cos(anglediff_left)
     cosdiff_right = np.cos(anglediff_right)
 
-    # Compute the energy contributions using the cosine of angle differences
+    #computing the energy contributions using the cosine of angle differences
     current_energy += 0.5 - 1.5 * cosdiff_next**2
     current_energy += 0.5 - 1.5 * cosdiff_prev**2
     current_energy += 0.5 - 1.5 * cosdiff_left**2
     current_energy += 0.5 - 1.5 * cosdiff_right**2
 
-"""
+#=======================================================================
+
 @jit(nopython=True)
-def one_energy(arr,ix,iy,nmax):
-    en = 0.0
-    ixp = (ix+1)%nmax # These are the coordinates
-    ixm = (ix-1)%nmax # of the neighbours
-    iyp = (iy+1)%nmax # with wraparound
-    iym = (iy-1)%nmax #
-#
-# Add together the 4 neighbour contributions
-# to the energy
-#
-    ang = arr[ix,iy]-arr[ixp,iy]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ixm,iy]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ix,iyp]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ix,iym]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    return en
-"""
-"""
-@jit(nopython=True)
-def one_energy(arr, ix, iy, nmax):
-    en = 0.0
-    constant = 0.5 * (1.0 - 3.0)
+def get_Qab(angles, nmax):
+    # Initialize a 2x2 matrix Qab with zeros
+    Qab = np.zeros((2, 2))
     
-    ixp = (ix + 1) % nmax
-    ixm = (ix - 1) % nmax
-    iyp = (iy + 1) % nmax
-    iym = (iy - 1) % nmax
-
-    #attempted to optimise the performance of the energy calculation 
-    #by taking the constant and repetitions out
-    for dx, dy in [(ixp, iy), (ixm, iy), (ix, iyp), (ix, iym)]:
-        ang = arr[ix, iy] - arr[dx, dy]
-        en += constant * np.cos(ang) ** 2
-    return en
-"""
-
-#=======================================================================
-"""
-@njit(parallel=True, fastmath=True)
-def all_energy(arr, nmax):
-    enall = 0.0
-    for i in prange(nmax):
-        for j in range(nmax):
-            enall += one_energy(arr, i, j, nmax)
-    return enall
-"""
-"""
-def all_energy(arr,nmax):
-    enall = 0.0
-    for i in range(nmax):
-        for j in range(nmax):
-            enall += one_energy(arr,i,j,nmax)
-    return enall
-"""    
-#=======================================================================
-
-@jit(nopython=True)
-def get_Qab(angles,nmax):
-    Qab = np.zeros((2,2))
-    delta = np.eye(2,2)
-    lab = np.vstack((np.cos(angles),np.sin(angles))).reshape(2,nmax,nmax)
+    # Create a 2x2 identity matrix
+    delta = np.eye(2, 2)
+    
+    # Create a 2D array 'lab' by reshaping a stacked array of cosines and sines of 'angles'
+    lab = np.vstack((np.cos(angles), np.sin(angles))).reshape(2, nmax, nmax)
+    
+    # Loop through matrix indices a and b (0 to 1)
     for a in range(2):
         for b in range(2):
+            # Loop through indices i and j (0 to nmax-1)
             for i in range(nmax):
                 for j in range(nmax):
-                    Qab[a,b] += 3*lab[a,i,j]*lab[b,i,j] - delta[a,b]
-    Qab = Qab/(2*nmax*nmax)
+                    # Update Qab[a, b] using the given formula
+                    Qab[a, b] += 3 * lab[a, i, j] * lab[b, i, j] - delta[a, b]
+    
+    # Normalize Qab by dividing by (2 * nmax * nmax)
+    Qab = Qab / (2 * nmax * nmax)
+    
+    # Return the resulting Qab matrix
     return Qab
 
+#computing jit angles
 @jit(nopython=True)
-def get_order(order_array,nsteps):
+def get_order(order_array, nsteps):
+    # Initialize an array 'order' of length 'nsteps + 1' with zeros
     order = np.zeros(nsteps + 1)
+    
+    # Loop through time steps 't' (0 to nsteps-1)
     for t in range(nsteps):
-        eigenvalues,eigenvectors = np.linalg.eig(order_array[t])
+        # Compute eigenvalues and eigenvectors of the input 'order_array[t]'
+        eigenvalues, eigenvectors = np.linalg.eig(order_array[t])
+        
+        # Store the maximum eigenvalue in 'order[t]'
         order[t] = eigenvalues.max()
+    
+    # Return the 'order' array
     return order
 
-"""
-@jit(nopython=True)
-def get_order(arr,nmax):
-    Qab = np.zeros((3,3))
-    delta = np.eye(3,3)
-    #
-    # Generate a 3D unit vector for each cell (i,j) and
-    # put it in a (3,i,j) array.
-    #
-    lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
-    for a in range(3):
-        for b in range(3):
-            for i in range(nmax):
-                for j in range(nmax):
-                    Qab[a,b] += 3*lab[a,i,j]*lab[b,i,j] - delta[a,b]
-    Qab = Qab/(2*nmax*nmax)
-    eigenvalues,eigenvectors = np.linalg.eig(Qab)
-    return eigenvalues.max()
-"""
 #=======================================================================
 
-def precompute_randoms(nmax, Ts):
-    scale = 0.1 + Ts
-    xran = np.random.randint(0, high=nmax, size=(nmax, nmax))
-    yran = np.random.randint(0, high=nmax, size=(nmax, nmax))
-    aran = np.random.normal(scale=scale, size=(nmax, nmax))
-    pre_rand = np.random.uniform(0.0, 1.0, size=(nmax, nmax))
-    return xran, yran, aran, pre_rand
+# Define a function with njit compilation enabled
+@njit
+def gen_noise_matrix(nmax):
+    # Create an empty array 'noise_values' to store random noise values
+    noise_values = np.empty(nmax**2, dtype=np.float64)
+    
+    # Loop through the indices of 'noise_values'
+    for index in range(len(noise_values)):
+        # Generate a random normal value and assign it to 'noise_values[index]'
+        noise_values[index] = np.random.normal()
+    
+    # Reshape the 1D 'noise_values' array into a 2D 'noise_matrix'
+    noise_matrix = noise_values.reshape((nmax, nmax))
+    
+    # Return the resulting 'noise_matrix'
+    return noise_matrix
+
 
 @njit(parallel=True)
 def MC_update(angles, rand_perturb, current_energy, Ts, nmax, accept_ratio, it):
@@ -264,65 +217,57 @@ def MC_update(angles, rand_perturb, current_energy, Ts, nmax, accept_ratio, it):
 
 
 
-@njit(parallel=True)
-def MC_step(arr, Ts, nmax, xran, yran, aran, pre_rand):
-    accept = np.zeros((nmax,), dtype=np.int32)
+@njit
+def MC_step(angles, Ts, nmax, energy_array, order_array, accept_ratio, it):
+    rand_perturb = gen_noise_matrix(nmax)  # Generate random angles
+    current_energy = np.zeros((2, nmax, nmax))
 
-    for i in prange(nmax):
-        for j in prange(nmax):
-            ix, iy = xran[i, j], yran[i, j]
-            ang = aran[i, j]
-            en0 = one_energy(arr, ix, iy, nmax)
-            arr[ix, iy] += ang
-            en1 = one_energy(arr, ix, iy, nmax)
+    # Perform the MC step sequentially for all rows
+    MC_update(angles, rand_perturb, current_energy, Ts, nmax, accept_ratio, it)
 
-            energy_diff = en1 - en0
-            if energy_diff <= 0 or np.exp(-energy_diff / Ts) >= pre_rand[i, j]:
-                accept[i] += 1
-            else:
-                arr[ix, iy] -= ang
+    # Sum up the new current_energy to get the total energy
+    energy_array[it] = np.sum(current_energy[1])
+    # Calculate order parameter Q
+    order_array[it] = get_Qab(angles, nmax)
 
-    return accept.sum() / (nmax * nmax)
+    return angles, current_energy, energy_array, order_array, accept_ratio
 
 #=======================================================================
 def main(nsteps, nmax, temp, pflag):
-    """
-    Arguments:  
-	  nsteps (int) = number of Monte Carlo steps (MCS) to perform;
-      nmax (int) = side length of square lattice to simulate;
-	  temp (float) = reduced temperature (range 0 to 2);
-	  pflag (int) = a flag to control plotting.
-    Description:
-      This is the main function running the Lebwohl-Lasher simulation.
-    Returns:
-      NULL
-    """
-    # Create and initialise lattice
-    lattice = initdat(nmax)
-    # Plot initial frame of lattice
-    plotdat(lattice,pflag,nmax)
-    # Create arrays to store energy, acceptance ratio and order parameter
-    energy = np.zeros(nsteps+1)
-    ratio = np.zeros(nsteps+1)
-    order = np.zeros(nsteps+1)
-    # Set initial values in arrays
-    energy[0] = all_energy(lattice,nmax)
-    ratio[0] = 0.5 # ideal value
-    order[0] = get_order(lattice,nmax)
+    Ts = temp
 
-    # Begin doing and timing some MC steps.
-    initial = time.time()
-    for it in range(1,nsteps+1):
-        ratio[it] = MC_step(lattice,temp,nmax)
-        energy[it] = all_energy(lattice,nmax)
-        order[it] = get_order(lattice,nmax)
-    final = time.time()
-    runtime = final-initial
-    
-    
-    print(f"The run was completed in {runtime:.2f} seconds.")
-    
-    savedat(lattice, nsteps, temp, runtime, ratio, energy, order, nmax)
+    # Create arrays to store energy, acceptance ratio and averaged Q matrix
+    energy_array = np.zeros(nsteps + 1)
+    order_array = np.zeros((nsteps + 1, 2, 2))
+    accept_ratio = np.zeros(nsteps + 1)
+
+    # Initialize grid
+    angles = initdat(nmax)
+    current_energy = np.zeros((nmax, nmax))
+
+    # Plot initial frame of lattice
+    plotdat(angles, current_energy, pflag, nmax)
+
+    initial_time = time.time()
+    #getting time and doing MC_steps algorithm
+
+    for it in range(nsteps):
+        angles, current_energy, energy_array, order_array, accept_ratio = MC_step(angles, Ts, nmax, energy_array, order_array, accept_ratio, it)
+
+    #calculating final time
+    order = get_order(order_array, nsteps)
+    final_time = time.time()
+    runtime = final_time - initial_time
+
+
+    #average_order = sum(order_array) / nsteps
+    #print(average_order)
+
+    # Final outputs
+    print(f"{sys.argv[0]}: Size: {nmax}, Steps: {nsteps}, T*: {Ts:5.3f}, Order: {order[-1]:5.3f}, Time: {runtime:8.6f} s")
+    # Plot final frame of lattice and generate output file
+    plotdat(angles, current_energy[1], pflag, nmax)
+    savedat(angles, nsteps, Ts, runtime, accept_ratio, energy_array, order, nmax)
 
     #interactive widgets making use of google scholar items
     #can move the sliders to whichever parameters and code will save the data for that specific run whilst also outputting their plots
