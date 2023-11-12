@@ -152,12 +152,12 @@ def get_Qab(angles, nmax):
 #computing jit angles
 @jit(nopython=True)
 def get_order(order_array, nsteps):
-    # Initialize an array 'order' of length 'nsteps + 1' with zeros
+    # Initialize an array 
     order = np.zeros(nsteps + 1)
     
-    # Loop through time steps 't' (0 to nsteps-1)
+    # Loop through time steps 
     for t in range(nsteps):
-        # Compute eigenvalues and eigenvectors of the input 'order_array[t]'
+        # Compute eigenvalues and eigenvectors of the input array
         eigenvalues, eigenvectors = np.linalg.eig(order_array[t])
         
         # Store the maximum eigenvalue in 'order[t]'
@@ -168,13 +168,13 @@ def get_order(order_array, nsteps):
 
 #=======================================================================
 
-# Define a function with njit compilation enabled
+
 @njit
 def gen_noise_matrix(nmax):
     #create an empty array to store random noise values
     noise_values = np.empty(nmax**2, dtype=np.float64)
     
-    #loop through the indices of 'noise_values'
+    #loop through the indices of values
     for index in range(len(noise_values)):
         #generate a random normal value and assign it 
         noise_values[index] = np.random.normal()
