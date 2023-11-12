@@ -252,28 +252,42 @@ def get_order(arr,nmax):
 """
 #=======================================================================
 def MC_step(arr, Ts, nmax, chunk_size):
+    # Scale factor for angle change
     scale = 0.1 + Ts
+    #counter to track the number of accepted changes
     accept = 0
 
-
+    # Generate arrays of random integers for x and y indices within the lattice range
     xran = np.random.randint(0, high=nmax, size=(chunk_size, nmax))
     yran = np.random.randint(0, high=nmax, size=(chunk_size, nmax))
+    # Generate an array of normally distributed random numbers for angle changes
     aran = np.random.normal(scale=scale, size=(chunk_size, nmax))
 
+    # Iterate over chunk of the entire lattice
     for i in range(chunk_size):
         for j in range(nmax):
+            # Select random indices and angle change value 
             ix = xran[i, j]
             iy = yran[i, j]
             ang = aran[i, j]
+
+            # Calculate initial energy at the selected lattice site
             en0 = one_energy(arr, ix, iy, nmax)
+            # Modify the value at the lattice site by the angle change
             arr[ix, iy] += ang
+            # Calculate the energy after modification
             en1 = one_energy(arr, ix, iy, nmax)
+
+            # Accept the change if the energy is reduced or according to the boltz
             if en1 <= en0 or np.exp(-(en1 - en0) / Ts) >= np.random.uniform():
                 accept += 1
             else:
+                # Revert the change if not accepted
                 arr[ix, iy] -= ang
 
+    # Return the number of accepted changes
     return accept
+
 
 #=======================================================================
 
