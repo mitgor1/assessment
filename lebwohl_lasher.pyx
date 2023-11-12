@@ -209,20 +209,37 @@ data2 = read_file(file_2)
 comparison = compare_values(data1, data2)
 """
 
+# Define a Cython function to calculate Qab matrix
 def get_Qab(cnp.ndarray[cnp.float64_t, ndim=2] angles, int nmax):
+    # Initialize a 2x2 matrix Qab with zeros
     cdef cnp.ndarray[cnp.float64_t, ndim=2] Qab = np.zeros((2, 2), dtype=np.float64)
+    
+    # Create a 2x2 identity matrix
     cdef double[:, :] delta = np.eye(2, dtype=np.float64)
+    
+    # Create a 2D array 'lab' by reshaping a stacked array of cosines and sines of 'angles'
     cdef double[:, :, :] lab = np.vstack((np.cos(angles), np.sin(angles))).reshape(2, nmax, nmax)
+    
     cdef int a, b, i, j
-
+    
+    # Loop through matrix indices a and b (0 to 1)
     for a in range(2):
         for b in range(2):
+            # Loop through indices i and j (0 to nmax-1)
             for i in range(nmax):
                 for j in range(nmax):
+                    # Update Qab[a, b] using the given formula
                     Qab[a, b] += 3 * lab[a, i, j] * lab[b, i, j] - delta[a, b]
+    
+    # Normalize Qab by dividing by (2 * nmax * nmax)
     Qab = Qab / (2 * nmax * nmax)
+    
+    # Convert the Cython array to a NumPy array and return it
     return np.asarray(Qab)
 
+
+"""
+AFTER TESTING: it makes code even slower... due to multiple numpy processes no point.
 #using a cdef function instead of direct manipulation for faster processing:
 cdef cnp.ndarray[cnp.float64_t, ndim=2] gen_noise_matrixO(int nmax, double scale):
     # Declare variables with static types
@@ -237,30 +254,39 @@ cdef cnp.ndarray[cnp.float64_t, ndim=2] gen_noise_matrixO(int nmax, double scale
     cdef cnp.ndarray[cnp.float64_t, ndim=2] noise_matrix = noise_values.reshape((nmax, nmax))
 
     return noise_matrix
+"""
 
-#same calculations as the numba version and original
+# Define a Cython function to compute the order parameter
 def get_order(cnp.ndarray[cnp.float64_t, ndim=3] order_array, int nsteps):
+    #Initialize array order of length for nsteps to iterate
     cdef cnp.ndarray[cnp.float64_t, ndim=1] order = np.zeros(nsteps + 1, dtype=np.float64)
     cdef int t
+    
+    #Looping through time steps 't'
     for t in range(nsteps):
-        eigenvalues,eigenvectors = np.linalg.eig(order_array[t])
+        # Computing eigenvalues and eigenvectors of the input 
+        eigenvalues, eigenvectors = np.linalg.eig(order_array[t])
+        
+        # Store the maximum eigenvalue in 'order[t]'
         order[t] = eigenvalues.max()
+    
+    #convert the cython array to a numPy array and return it
     return np.asarray(order)
 
 #=======================================================================
 
 cdef void line_energy(cnp.ndarray[cnp.float64_t, ndim=2] angles, double[:, :, :] current_energy, int ix, int nmax, int old_new):
-    # Assume angles is a 2D array of shape (nmax, nmax)
+    #assume angles is a 2D array of shape (nmax, nmax)
     cdef int iy, ix_plus, ix_minus
     cdef double anglediff_next, anglediff_prev, anglediff_left, anglediff_right
     cdef double cosdiff_next, cosdiff_prev, cosdiff_left, cosdiff_right
 
-    # Calculate index of previous and next rows accounting for periodic boundary conditions
+    #calculate index of previous and next rows accounting for the periodic boundary conditions
     ix_plus = (ix + 1) % nmax
     ix_minus = (ix - 1) % nmax
 
     for iy in range(nmax):
-        # Calculate angle differences for the row using periodic boundary conditions for columns
+        #calculate the angle differences for the row using periodic boundary conditions for columns
         iy_plus = (iy + 1) % nmax
         iy_minus = (iy - 1) % nmax
 
@@ -269,13 +295,13 @@ cdef void line_energy(cnp.ndarray[cnp.float64_t, ndim=2] angles, double[:, :, :]
         anglediff_left = angles[ix, iy] - angles[ix, iy_minus]
         anglediff_right = angles[ix, iy] - angles[ix, iy_plus]
 
-        # Take the cosine of the angle differences
+        #take the cosine of the angle differences
         cosdiff_next = cos(anglediff_next)
         cosdiff_prev = cos(anglediff_prev)
         cosdiff_left = cos(anglediff_left)
         cosdiff_right = cos(anglediff_right)
 
-        # Perform operations directly on the memory view slice
+        # Perform operations directly on the memory view slice, basing off old_new too
         current_energy[old_new, ix, iy] = (0.5 - 1.5 * pow(cosdiff_next, 2)
                                            + 0.5 - 1.5 * pow(cosdiff_prev, 2)
                                            + 0.5 - 1.5 * pow(cosdiff_left, 2)
@@ -305,7 +331,7 @@ cdef void MC_update(cnp.ndarray[cnp.float64_t, ndim=2] angles, double[:, :] rand
                 metrop_factor = exp(-energy_diff / Ts)
                 
                 # Random float between 0 and 1
-                accept = rand() / RAND_MAX
+                accept = rand() / RAND_MAX #faster than doing numpy stuff
                 
                 # Decide whether to accept the new angle based on the Metropolis criterion
                 if energy_diff <= 0 or metrop_factor >= accept:
@@ -322,12 +348,11 @@ cdef void MC_update(cnp.ndarray[cnp.float64_t, ndim=2] angles, double[:, :] rand
 def MC_step(cnp.ndarray[cnp.float64_t, ndim=2] angles, double Ts, int nmax, cnp.ndarray[cnp.float64_t, ndim=1] energy_array , cnp.ndarray[cnp.float64_t, ndim=3] order_array, double[:] accept_ratio, int it):
     # Generate random perturbations
     cdef double scale=0.1+Ts
-    #cdef double[:, :] rand_perturb = gen_noise_matrix(nmax,scale)
+    #decided not to use gen_noise_matrix as it increased the time and couldnt replicate in C manner exactly (0 -1)
     cdef cnp.ndarray[cnp.float64_t, ndim=2] rand_perturb = np.random.normal(scale=scale, size=(nmax,nmax))
     cdef double[:, :, :] current_energy = np.zeros((2, nmax, nmax))
     # Perform the MC update step
     MC_update(angles, rand_perturb, current_energy, Ts, nmax, accept_ratio, it)
-    #MC_update(angles, rand_perturb, current_energy, Ts, nmax, accept_ratio, it, thread_count)
 
     # Sum up the new current_energy to get the total energy
     energy_array[it] = np.sum(np.asarray(current_energy[1]))
@@ -336,36 +361,28 @@ def MC_step(cnp.ndarray[cnp.float64_t, ndim=2] angles, double Ts, int nmax, cnp.
     cdef double[:, :] Qab = get_Qab(angles, nmax)
     for i in range(2):
         for j in range(2):
-            #order_array[it, i * 2 + j] = Qab[i, j]
             order_array[it, i, j] = Qab[i,j]
 
-    #return np.asarray(angles), np.asarray(current_energy), np.asarray(energy_array), order_array, accept_ratio
-    #return (np.array(angles, copy=False), np.array(current_energy, copy=False), energy_array, order_array, accept_ratio)
-    #return angles, current_energy, energy_array, order_array, accept_ratio
     return (np.asarray(angles), np.asarray(current_energy), energy_array, order_array, np.asarray(accept_ratio))
 
 
 def main(int nsteps,int nmax,double temp,int pflag):
 
     # Create and initialise lattice
-    #cdef cnp.ndarray[cnp.float64_t, ndim=2] angles = initdat(nmax)
-    # Create arrays to store energy, acceptance ratio and order parameter
+    # Create arrays to store energy, acceptance ratio and order values
     cdef cnp.ndarray[cnp.float64_t, ndim=3] order_array = np.zeros((nsteps + 1, 2, 2))
     cdef cnp.ndarray[cnp.float64_t, ndim=1] energy_array = np.zeros(nsteps + 1)
     cdef cnp.ndarray[cnp.float64_t, ndim=1] accept_ratio = np.zeros(nsteps + 1)
     c_np_array = np.zeros((2, nmax, nmax), dtype=np.float64)
     cdef double[:, :, :] current_energy = c_np_array
-    #double[:, :] angles
-    #double[:] order
     cdef double runtime
     cdef int it
     cdef double Ts = temp
 
     
-    # Plot initial frame of lattice
+    #plot initial frame of lattice
     cdef cnp.ndarray[cnp.float64_t, ndim=2] angles = initdat(nmax)
-    #cdef double[:, :] angles = initdat(nmax)
-    #angles = initdat(nmax)
+    #defining angles array etc
     plotdat(angles, current_energy, pflag, nmax)
     
 
@@ -373,10 +390,12 @@ def main(int nsteps,int nmax,double temp,int pflag):
     initial = openmp.omp_get_wtime()
     #cdef double initial_time = time.time()
 
+
+    #completing mc_steps algorithm
     for it in range(nsteps):
         angles, current_energy, energy_array, order_array, accept_ratio = MC_step(angles, Ts, nmax, energy_array, order_array, accept_ratio, it)
 
-    #cdef double[:] order = get_order(order_array, nsteps)
+    #need to make sure when to use memory views and when not to
     cdef cnp.ndarray[cnp.float64_t, ndim=1] order = get_order(order_array, nsteps)
     
     # Record the final time and compute the runtime
@@ -404,7 +423,6 @@ if __name__ == '__main__':
         SIZE = int(sys.argv[2])
         TEMPERATURE = float(sys.argv[3])
         PLOTFLAG = int(sys.argv[4])
-        #THREADS = int(sys.argv[5]) 
         main(ITERATIONS, SIZE, TEMPERATURE, PLOTFLAG)
     else:
         print("Usage: python {} <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG>".format(sys.argv[0]))
